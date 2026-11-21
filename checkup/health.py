@@ -186,7 +186,8 @@ def run_health(ctx, wanted, progress=None, profile_checks=()):
     """
     from .checks import CHECKS
     tests = {c.id: c for c in HEALTH if c.id in wanted}
-    checks = {c.id: c for c in CHECKS if c.id in profile_checks and c.id not in NOT_PROFILE_TESTS}
+    checks = {c.id: c for c in CHECKS
+              if (c.id in profile_checks or c.id == "extras") and c.id not in NOT_PROFILE_TESTS}
     order = list(tests) + [i for i in checks if i not in tests]
     if any(i in checks for i in ("secure-boot", "windows-drive")):
         ctx.gather_root(True)

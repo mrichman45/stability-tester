@@ -27,7 +27,8 @@ Checkup found gets fixed, it adds an entry to the [Fix log](#fix-log) at the bot
    cd ~/stability-tester && makepkg -si
    ```
 3. Open **Checkup** from the app menu, go to **My Setup**, and press **Set up this laptop**.
-   It recognises the laptop by its hardware, applies every fix in this guide, then lists anything
+   It recognises the laptop by its hardware, asks for your password once, applies every fix in this
+   guide (including the apps and settings listed under "Also set up on this laptop"), then lists anything
    that has to be done by hand (rebooting, BIOS settings, Secure Boot keys).
 4. After big updates, run **Stability → Test this laptop's profile** to check the fixes still work.
    **Reapply fixes** puts back anything an update broke.

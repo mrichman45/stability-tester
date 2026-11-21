@@ -11,7 +11,8 @@ from pathlib import Path
 
 from . import sensors
 from .checks import FAIL, OK, SKIP, WARN
-from .util import HOME, root_command, which
+from .root import RootSession
+from .util import HOME, which
 
 
 @dataclass
@@ -214,41 +215,37 @@ class StabilityRun:
 
         self.stage = "admin"
         self.on_stage("admin", 0, 0)
-        cmd = root_command(["stability", "--ram", str(ram), "--smart", str(smart), "--since", str(int(start_epoch))], self.gui)
-        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        ram_rc, ram_lines, klog, got_any = None, [], [], False
-        ram_start = None
-        for line in self._proc.stdout:
-            line = line.rstrip("\n")
-            if self._cancel.is_set():
-                break
-            got_any = got_any or line.startswith(("STAGE", "DONE"))
-            if line.startswith("STAGE "):
-                self.stage = line.split()[1]
-                if self.stage == "ram":
-                    ram_start = time.time()
-                self.on_stage(self.stage, 0, 0)
-            elif line.startswith("MEMTESTER "):
-                ram_lines.append(line[10:])
-                est = max(60, ram // 4)
-                if ram_start:
-                    self.on_stage("ram", max(0, int(est - (time.time() - ram_start))), est)
-            elif line.startswith("RAM_RC "):
-                ram_rc = int(line.split()[1])
-            elif line.startswith("SMART "):
-                self._disk(json.loads(line[6:]))
-            elif line.startswith("KLOG "):
-                klog.append(line[5:])
-        rc = self._proc.wait()
-        if self._cancel.is_set():
-            self._note("Stopped. A RAM test that already started may keep running in the background for a few minutes.")
-            return
-        if not got_any:
-            reason = "Administrator access was refused or cancelled." if rc in (126, 127, 1) else f"Helper failed (exit {rc})."
+        args = ["--ram", ram, "--smart", smart, "--since", int(start_epoch)]
+        session = RootSession.get(self.gui)
+        ram_rc, ram_lines, klog, ram_start = None, [], [], None
+        try:
+            for line in session.request("stability", args=args):
+                if self._cancel.is_set():
+                    break   # the helper finishes the current step (e.g. RAM) before answering again
+                if line.startswith("STAGE "):
+                    self.stage = line.split()[1]
+                    if self.stage == "ram":
+                        ram_start = time.time()
+                    self.on_stage(self.stage, 0, 0)
+                elif line.startswith("MEMTESTER "):
+                    ram_lines.append(line[10:])
+                    est = max(60, ram // 4)
+                    if ram_start:
+                        self.on_stage("ram", max(0, int(est - (time.time() - ram_start))), est)
+                elif line.startswith("RAM_RC "):
+                    ram_rc = int(line.split()[1])
+                elif line.startswith("SMART "):
+                    self._disk(json.loads(line[6:]))
+                elif line.startswith("KLOG "):
+                    klog.append(line[5:])
+        except (PermissionError, RuntimeError) as e:
             for id, title, wanted in (("ram", "RAM", ram), ("disk", "Disks", smart)):
                 if wanted:
-                    self._result(id, title, SKIP, reason)
-            self._result("log", "System log", SKIP, reason)
+                    self._result(id, title, SKIP, str(e))
+            self._result("log", "System log", SKIP, str(e))
+            return
+        if self._cancel.is_set():
+            self._note("Stopped.")
             return
 
         if ram:

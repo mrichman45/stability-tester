@@ -1,36 +1,64 @@
 #!/usr/bin/env python3
-"""Checkup's administrator helper. Runs only a fixed set of READ-ONLY / test actions as root:
+"""Checkup's administrator helper.
 
-  checkup-root setup-info
-      Secure Boot status, sbctl verify, NTFS kernel messages (JSON on stdout).
+Started ONCE per Checkup session (via pkexec from the app, or sudo from checkup-cli), so you
+authenticate once. It then reads one JSON request per line on stdin and answers with output lines,
+ending each answer with a line "\\x1eEND <exit code>".
 
-  checkup-root stability --ram MB --smart 0|1 --since EPOCH
-      memtester on MB of RAM (0 = skip), SMART data for every disk, kernel errors since EPOCH.
-
-It never changes the system. Fixes are run separately, visibly, in a terminal.
+Requests:
+  {"action": "setup-info"}                         Secure Boot status, sbctl verify, NTFS kernel messages (JSON)
+  {"action": "stability", "args": [...]}            --ram MB --smart 0|1 --since EPOCH (RAM test, SMART, kernel errors)
+  {"action": "run-plan", "steps": [...]}           fixes you confirmed in Checkup, in order:
+      {"kind": "root",  "cmd": "..."}   run as root
+      {"kind": "user",  "cmd": "..."}   run as you (with your desktop session's environment)
+      {"kind": "build", "dir": "..."}   build a PKGBUILD as you, install the package as root
+      {"kind": "aur",   "pkg": "..."}   fetch from the AUR as you, then build as above
 """
 
 import json
 import os
+import pwd
 import re
 import subprocess
 import sys
 
-os.environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
+STD_PATH = "/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
+os.environ["PATH"] = STD_PATH
 os.environ["LC_ALL"] = "C.UTF-8"
+END = "\x1eEND"
+STEP = "\x1eSTEP"
 
 KLOG_PATTERN = re.compile(
     r"mce:|machine check|hardware error|pcie bus error|aer:|nvrm: xid|amdgpu.*(timeout|ring .* reset)|i/o error|segfault",
     re.I)
 
 
+def say(text):
+    print(text, flush=True)
+
+
 def out(cmd, timeout=60):
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         return p.returncode, p.stdout + p.stderr
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         return 127, str(e)
 
+
+def stream(cmd, env=None, cwd=None, prefix=""):
+    """Run a command, echoing its output; never lets it read our request pipe."""
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                             text=True, env=env, cwd=cwd, errors="replace")
+    except FileNotFoundError as e:
+        say(f"{prefix}{e}")
+        return 127
+    for line in p.stdout:
+        say(prefix + line.rstrip("\n").replace("\b", ""))
+    return p.wait()
+
+
+# ---------------------------------------------------------------- read-only actions
 
 def setup_info():
     info = {}
@@ -40,11 +68,12 @@ def setup_info():
         _, info["sbctl_verify"] = out(["sbctl", "verify"])
     _, klog = out(["journalctl", "-k", "-b", "--no-pager", "-o", "short-monotonic"])
     info["kernel_log"] = "\n".join(l for l in klog.splitlines() if "ntfs3" in l)
-    print(json.dumps(info))
+    say(json.dumps(info))
+    return 0
 
 
 def disks():
-    rc, text = out(["lsblk", "-dno", "NAME,TYPE"])
+    _, text = out(["lsblk", "-dno", "NAME,TYPE"])
     return [l.split()[0] for l in text.splitlines()
             if len(l.split()) == 2 and l.split()[1] == "disk" and not l.startswith(("zram", "loop"))]
 
@@ -53,7 +82,7 @@ def stability(args):
     ram, smart, since = 0, 1, 0
     i = 0
     while i < len(args):
-        if args[i] in ("--ram", "--smart", "--since") and i + 1 < len(args) and args[i + 1].isdigit():
+        if args[i] in ("--ram", "--smart", "--since") and i + 1 < len(args) and str(args[i + 1]).isdigit():
             val = int(args[i + 1])
             if args[i] == "--ram":
                 ram = min(val, 65536)
@@ -63,45 +92,170 @@ def stability(args):
                 since = val
             i += 2
         else:
-            sys.exit(f"bad argument: {args[i]}")
+            say(f"bad argument: {args[i]}")
+            return 2
 
     if ram > 0:
-        print("STAGE ram", flush=True)
-        try:
-            p = subprocess.Popen(["memtester", f"{ram}M", "1"], stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT, text=True)
-            for line in p.stdout:
-                line = line.replace("\b", "").strip()
-                if line:
-                    print("MEMTESTER " + line, flush=True)
-            print(f"RAM_RC {p.wait()}", flush=True)
-        except FileNotFoundError:
-            print("RAM_RC 127", flush=True)
-
+        say("STAGE ram")
+        rc = stream(["memtester", f"{ram}M", "1"], prefix="MEMTESTER ")
+        say(f"RAM_RC {rc}")
     if smart:
-        print("STAGE disks", flush=True)
+        say("STAGE disks")
         for d in disks():
-            rc, text = out(["smartctl", "-j", "-a", f"/dev/{d}"])
+            _, text = out(["smartctl", "-j", "-a", f"/dev/{d}"])
             try:
                 data = json.loads(text)
             except json.JSONDecodeError:
                 data = {"error": text[-500:]}
-            print("SMART " + json.dumps({"disk": d, "data": data}), flush=True)
-
-    print("STAGE log", flush=True)
-    rc, klog = out(["journalctl", "-k", "-b", "--since", f"@{since}", "--no-pager", "-o", "short-monotonic"])
+            say("SMART " + json.dumps({"disk": d, "data": data}))
+    say("STAGE log")
+    _, klog = out(["journalctl", "-k", "-b", "--since", f"@{since}", "--no-pager", "-o", "short-monotonic"])
     for line in klog.splitlines():
         if KLOG_PATTERN.search(line):
-            print("KLOG " + line, flush=True)
-    print("DONE", flush=True)
+            say("KLOG " + line)
+    say("DONE")
+    return 0
+
+
+# ---------------------------------------------------------------- applying fixes
+
+class User:
+    def __init__(self, uid):
+        pw = pwd.getpwuid(uid)
+        self.uid, self.name, self.home = uid, pw.pw_name, pw.pw_dir
+        self.env = {
+            "HOME": self.home, "USER": self.name, "LOGNAME": self.name, "PATH": STD_PATH, "LANG": "C.UTF-8",
+            "XDG_RUNTIME_DIR": f"/run/user/{uid}",
+            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{uid}/bus",
+            "XDG_CONFIG_HOME": f"{self.home}/.config",
+        }
+
+    def expand(self, path):
+        return path.replace("~", self.home, 1) if path.startswith("~") else path
+
+    def cmd(self, argv):
+        return ["runuser", "-u", self.name, "--"] + argv
+
+    def run(self, shell, cwd=None, prefix=""):
+        return stream(self.cmd(["bash", "-c", shell]), env=self.env, cwd=cwd or self.home, prefix=prefix)
+
+    def capture(self, argv, cwd=None):
+        try:
+            p = subprocess.run(self.cmd(argv), capture_output=True, text=True, env=self.env, cwd=cwd,
+                               stdin=subprocess.DEVNULL)
+            return p.returncode, p.stdout, p.stderr
+        except FileNotFoundError as e:
+            return 127, "", str(e)
+
+
+def noconfirm(cmd):
+    """Fixes run without a keyboard, so pacman must not stop to ask."""
+    if re.match(r"^pacman\s", cmd) and "--noconfirm" not in cmd:
+        return "pacman --noconfirm " + cmd[len("pacman "):]
+    return cmd
+
+
+def build(user, directory):
+    d = user.expand(directory)
+    if not os.path.isfile(os.path.join(d, "PKGBUILD")):
+        say(f"No PKGBUILD in {d}")
+        return 1
+    rc, info, err = user.capture(["makepkg", "--printsrcinfo"], cwd=d)
+    if rc != 0:
+        say(err)
+        return rc
+    deps = []
+    for line in info.splitlines():
+        m = re.match(r"\s*(depends|makedepends)\s*=\s*([^<>=\s]+)", line)
+        if m:
+            deps.append(m.group(2))
+    deps = list(dict.fromkeys(deps))
+    if deps:
+        say(f"Installing build requirements: {' '.join(deps)}")
+        rc = stream(["pacman", "-S", "--needed", "--noconfirm"] + deps)
+        if rc != 0:
+            return rc
+    say("Building the package (as you)...")
+    rc = stream(user.cmd(["makepkg", "-f", "--noconfirm"]), env=user.env, cwd=d)
+    if rc != 0:
+        return rc
+    rc, listing, err = user.capture(["makepkg", "--packagelist"], cwd=d)
+    pkgs = [p for p in listing.split() if os.path.exists(p) and "-debug-" not in os.path.basename(p)]
+    if not pkgs:
+        say("makepkg didn't produce a package.")
+        return 1
+    say("Installing the package...")
+    return stream(["pacman", "-U", "--noconfirm"] + pkgs)
+
+
+def aur(user, pkg):
+    if not re.fullmatch(r"[a-z0-9@._+-]+", pkg):
+        say(f"Not an AUR package name: {pkg}")
+        return 2
+    d = os.path.join(user.home, ".cache/checkup/aur", pkg)
+    if os.path.isdir(os.path.join(d, ".git")):
+        rc = user.run(f"git -C '{d}' pull --ff-only")
+    else:
+        rc = user.run(f"mkdir -p '{os.path.dirname(d)}' && git clone 'https://aur.archlinux.org/{pkg}.git' '{d}'")
+    return rc if rc != 0 else build(user, d)
+
+
+def run_plan(steps, uid):
+    user = User(uid)
+    for n, step in enumerate(steps, 1):
+        kind = step.get("kind")
+        what = step.get("cmd") or step.get("dir") or step.get("pkg") or ""
+        say(f"{STEP} {n}/{len(steps)} {kind}: {what}")
+        if kind == "root":
+            rc = stream(["bash", "-c", noconfirm(step["cmd"])], cwd="/")
+        elif kind == "user":
+            rc = user.run(step["cmd"])
+        elif kind == "build":
+            rc = build(user, step["dir"])
+        elif kind == "aur":
+            rc = aur(user, step["pkg"])
+        else:
+            say(f"Unknown step: {kind}")
+            rc = 2
+        if rc != 0:
+            say(f"This step failed (exit {rc}), so the steps after it were not run.")
+            return rc
+    return 0
+
+
+# ---------------------------------------------------------------- session
+
+def serve():
+    uid = os.environ.get("PKEXEC_UID") or os.environ.get("SUDO_UID")
+    if os.geteuid() != 0 or not uid or not uid.isdigit():
+        sys.exit("checkup-root must be started by Checkup (through pkexec or sudo).")
+    say("READY")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            action = req.get("action")
+            if action == "setup-info":
+                rc = setup_info()
+            elif action == "stability":
+                rc = stability([str(a) for a in req.get("args", [])])
+            elif action == "run-plan":
+                rc = run_plan(req.get("steps", []), int(uid))
+            elif action == "ping":
+                rc = 0
+            else:
+                say(f"Unknown action: {action}")
+                rc = 2
+        except Exception as e:
+            say(f"Helper error: {e}")
+            rc = 1
+        say(f"{END} {rc}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
-    if sys.argv[1] == "setup-info":
-        setup_info()
-    elif sys.argv[1] == "stability":
-        stability(sys.argv[2:])
+    if len(sys.argv) == 2 and sys.argv[1] == "serve":
+        serve()
     else:
-        sys.exit(f"unknown action: {sys.argv[1]}")
+        sys.exit(__doc__)

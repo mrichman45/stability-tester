@@ -3,7 +3,8 @@
 import argparse
 import sys
 
-from . import guide, runner
+from . import discover, guide, runner
+from .root import RootSession
 from .checks import CHECKS, FAIL, INFO, OK, SKIP, WARN, Context, run_checks
 from .machine import detect, profiles
 from .stability import StabilityOptions, StabilityRun
@@ -51,6 +52,16 @@ def record(cfg, machine, results, fixed_by=None):
 def cmd_setup(args, cfg):
     machine = pick_machine(cfg)
     print(f"Checking {machine.label}" + (f" (recognised by {machine.detected_by})" if machine.detected_by else "") + "...\n")
+    if machine.id != "unknown":
+        found = discover.scan(machine, machine.extras, cfg.get("ignored_findings", {}).get(machine.id, []))
+        if found:
+            discover.save_findings(machine, found)
+            machine.extras = detect(cfg.get("machine", "")).extras if detect(cfg.get("machine", "")).id == machine.id else machine.extras
+            print(paint(INFO, f"Found {len(found)} new things on this laptop and added them to its guide and profile:"))
+            for f in found:
+                print(f"  + {f.text}")
+            print("  (remove any with 'checkup-cli review')\n")
+        discover.write_guide_section(guide.guide_path(cfg, machine), machine.extras)
     ctx = Context(machine, gui=False, cfg=cfg)
     results = run_checks(ctx, cfg.get("ignored", []))
     show(results)
@@ -90,9 +101,12 @@ def cmd_setup(args, cfg):
         print("  " + n)
     for e in errors:
         print(paint(FAIL, "  " + e))
-    if plan.script:
-        script, status = runner.write_script(plan, f"Setting up {machine.label}")
-        runner.run_script_here(script)
+    if plan.needs_admin:
+        print("\nYou'll be asked for your password once.")
+    guide.remember_fixes(machine, plan.fixed_by)
+    rc = runner.execute(plan, False, on_line=print_step)
+    if rc == 0 and plan.after:
+        print("\nAfterwards: " + " ".join(plan.after))
 
     print("\nChecking again...\n")
     results = run_checks(Context(machine, gui=False, cfg=cfg), cfg.get("ignored", []))
@@ -103,6 +117,35 @@ def cmd_setup(args, cfg):
         print("\nStill to do by hand:")
         for c, r in manual:
             print(f"  • {c.title}: {r.manual}")
+    return 0
+
+
+def print_step(line):
+    if line.startswith(runner.STEP):
+        parts = line[len(runner.STEP):].strip().split(" ", 2)
+        print(paint(INFO, f"\n[{parts[0]}] $ {runner.display(parts[2].split(': ', 1)[-1]) if len(parts) > 2 else ''}"))
+    else:
+        print("  " + line)
+
+
+def cmd_review(args, cfg):
+    machine = pick_machine(cfg)
+    entries = discover.items(machine.extras)
+    if not entries:
+        print("Nothing has been found on this laptop yet.")
+        return 0
+    for i, (id, text) in enumerate(entries, 1):
+        print(f"  {i:2}. {text}")
+    choice = input("Numbers to remove from the guide and profile (e.g. 2 5), or Enter to keep all: ").split()
+    gone = [entries[int(c) - 1][0] for c in choice if c.isdigit() and 1 <= int(c) <= len(entries)]
+    if gone:
+        discover.remove_items(machine, gone)
+        ign = cfg.setdefault("ignored_findings", {}).setdefault(machine.id, [])
+        ign += [g for g in gone if g not in ign]
+        guide.save_config(cfg)
+        machine = detect(cfg.get("machine", ""))
+        discover.write_guide_section(guide.guide_path(cfg, machine), machine.extras)
+        print(f"Removed {len(gone)}.")
     return 0
 
 
@@ -157,9 +200,7 @@ def cmd_stability(args, cfg):
             notes, errors = runner.run_python_steps(plan)
             for e in errors:
                 print(paint(FAIL, "  " + e))
-            if plan.script:
-                script, _ = runner.write_script(plan, f"Reapplying fixes on {machine.label}")
-                runner.run_script_here(script)
+            runner.execute(plan, False, on_line=print_step)
             guide.remember_fixes(machine, plan.fixed_by)
     added = []
     if machine.id != "unknown":
@@ -178,9 +219,7 @@ def cmd_guide(args, cfg):
         if not lines:
             print("The guide isn't inside a git repository, so there's nothing to sync.")
             return 1
-        plan = runner.Plan(items=[], script=lines)
-        script, _ = runner.write_script(plan, "Syncing the guide with GitHub")
-        return runner.run_script_here(script)
+        return runner.execute(runner.Plan(items=[], script=lines), False, on_line=print_step)
     return 0
 
 
@@ -214,13 +253,21 @@ def main(argv=None):
         st.add_argument(f"--skip-{t}", action="store_true")
     g = sub.add_parser("guide", help="show where the guide is, or sync it with GitHub")
     g.add_argument("--sync", action="store_true")
+    sub.add_parser("review", help="review what the scan added to this laptop's guide and profile")
     m = sub.add_parser("machine", help="show or set which laptop this is")
     m.add_argument("--set", metavar="ID", help="laptop id from machines.json, or 'auto'")
     args = ap.parse_args(argv)
     cfg = guide.load_config()
     if args.cmd in ("setup", "apply"):
-        return cmd_setup(args, cfg)
-    return {"stability": cmd_stability, "guide": cmd_guide, "machine": cmd_machine}[args.cmd](args, cfg)
+        try:
+            return cmd_setup(args, cfg)
+        finally:
+            RootSession.get(False).close()
+    try:
+        return {"stability": cmd_stability, "guide": cmd_guide, "machine": cmd_machine,
+                "review": cmd_review}[args.cmd](args, cfg)
+    finally:
+        RootSession.get(False).close()
 
 
 if __name__ == "__main__":

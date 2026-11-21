@@ -148,10 +148,5 @@ def helper_path():
     return str(HELPER_INSTALLED if HELPER_INSTALLED.exists() else HELPER_DEV)
 
 
-def root_command(args, gui):
-    """Command line that runs the read-only root helper, via pkexec (app) or sudo (terminal)."""
-    return (["pkexec"] if gui else ["sudo"]) + [helper_path()] + list(args)
-
-
 def shell_quote(s):
     return "'" + str(s).replace("'", "'\\''") + "'"

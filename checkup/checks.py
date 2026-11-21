@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 from . import fixers
 from .util import (GID, HOME, UID, USER, kread, kwrite_cmd, pkg_required_by, pkg_version,
-                   read, repo_versions, run, root_command, shell_quote, unit_state, upstream,
+                   read, repo_versions, run, shell_quote, unit_state, upstream,
                    groups_configured, groups_in_session, login_shell, which)
 
 OK, WARN, FAIL, SKIP, INFO = "ok", "warn", "fail", "skip", "info"
@@ -83,16 +83,16 @@ class Context:
         return check_id in self.machine.checks
 
     def gather_root(self, needed):
-        """One administrator prompt for everything that needs root (read-only)."""
-        if not needed:
+        """Read Secure Boot and drive status through the one administrator session."""
+        if not needed or self.root.get("_ok"):
             return
-        rc, out, err = run(root_command(["setup-info"], self.gui), timeout=180)
-        if rc == 0:
-            try:
-                self.root = json.loads(out)
-            except json.JSONDecodeError:
-                self.root = {}
-        self.root["_ok"] = rc == 0
+        from .root import RootSession
+        try:
+            rc, lines = RootSession.get(self.gui).call("setup-info")
+            self.root = json.loads("\n".join(lines))
+            self.root["_ok"] = rc == 0
+        except (PermissionError, RuntimeError, json.JSONDecodeError):
+            self.root = {"_ok": False}
 
 
 # ---------------------------------------------------------------- checks
@@ -376,7 +376,9 @@ def c_webcam_page(ctx):
         "Installed the Webcam settings page from GitHub",
         ["sudo pacman -S --needed git base-devel",
          "if [ -d ~/kcm-webcam/.git ]; then git -C ~/kcm-webcam pull; else git clone https://github.com/mrichman45/kcm-webcam ~/kcm-webcam; fi",
-         "cd ~/kcm-webcam && ./install.sh"]))
+         "@build ~/kcm-webcam",
+         "systemctl --user daemon-reload",
+         "systemctl --user enable --now webcam-settings.service"]))
 
 
 def c_webcam_service(ctx):
@@ -405,11 +407,8 @@ def c_nordvpn(ctx):
     if not (pkg_version("nordvpn-bin") or pkg_version("nordvpn")):
         if not ctx.expects("nordvpn"):
             return None
-        if not which("paru"):
-            return Result(FAIL, "NordVPN isn't installed, and paru (for the AUR) isn't available.",
-                          manual="Install paru from CachyOS Hello, or run 'sudo pacman -S paru', then run Checkup again.")
         problems.append("NordVPN isn't installed")
-        script.append("paru -S --needed nordvpn-bin")
+        script += ["sudo pacman -S --needed git base-devel", "@aur nordvpn-bin"]
     enabled, active = unit_state("nordvpnd.service")
     if enabled != "enabled" or active != "active":
         problems.append(f"the NordVPN service is {active}")
@@ -421,6 +420,65 @@ def c_nordvpn(ctx):
     if problems:
         return Result(FAIL, _cap("; ".join(problems)) + ".", Fix("Enabled NordVPN's service and group", script, after=after))
     return Result(OK, "NordVPN service running and you're in the nordvpn group.")
+
+
+def c_extras(ctx):
+    e = getattr(ctx.machine, "extras", {}) or {}
+    if not any(e.get(k) for k in ("packages", "aur", "flatpaks", "remove", "services", "user_services", "groups", "shell", "notes")):
+        return None
+    script, problems, after, manual = [], [], [], []
+    missing = [p for p in e.get("packages", []) if not pkg_version(p)]
+    if missing:
+        problems.append("apps not installed: " + ", ".join(missing))
+        script.append("sudo pacman -S --needed " + " ".join(missing))
+    missing_aur = [p for p in e.get("aur", []) if not pkg_version(p)]
+    if missing_aur:
+        problems.append("AUR apps not installed: " + ", ".join(missing_aur))
+        script += ["sudo pacman -S --needed git base-devel"] + [f"@aur {p}" for p in missing_aur]
+    if e.get("flatpaks"):
+        have = set(run(["flatpak", "list", "--app", "--columns=application"])[1].split()) if which("flatpak") else set()
+        missing_fp = [a for a in e["flatpaks"] if a not in have]
+        if missing_fp:
+            problems.append("Flatpaks not installed: " + ", ".join(missing_fp))
+            script += ["sudo pacman -S --needed flatpak",
+                       "sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo"]
+            script += [f"sudo flatpak install -y --noninteractive flathub {a}" for a in missing_fp]
+    back = [p for p in e.get("remove", []) if pkg_version(p)]
+    removable = [p for p in back if not pkg_required_by(p)]
+    if back:
+        problems.append("removed apps are back: " + ", ".join(back))
+        if removable:
+            script.append("sudo pacman -Rns " + " ".join(removable))
+        if len(removable) < len(back):
+            manual.append("Some removed apps are needed by other packages: " + ", ".join(sorted(set(back) - set(removable))))
+    for unit in e.get("services", []):
+        enabled, active = unit_state(unit)
+        if enabled != "enabled" or active != "active":
+            problems.append(f"{unit} is {active}")
+            script.append(f"sudo systemctl enable --now {unit}")
+    for unit in e.get("user_services", []):
+        enabled, active = unit_state(unit, user=True)
+        if enabled != "enabled" or active != "active":
+            problems.append(f"your {unit} is {active}")
+            script += ["systemctl --user daemon-reload", f"systemctl --user enable --now {unit}"]
+    missing_groups = [g for g in e.get("groups", []) if g not in groups_configured()]
+    if missing_groups:
+        problems.append("not in groups: " + ", ".join(missing_groups))
+        script += [f"sudo groupadd -f {g}" for g in missing_groups] + [f"sudo usermod -aG {g} {USER}" for g in missing_groups]
+        after.append("Log out and back in so the group changes apply.")
+    if e.get("shell") and not login_shell().endswith("/" + e["shell"]):
+        problems.append(f"login shell isn't {e['shell']}")
+        script += [f"sudo pacman -S --needed {e['shell']}", f"sudo chsh -s /usr/bin/{e['shell']} {USER}"]
+        after.append("Log out and back in to use the new shell.")
+    texts = e.get("note_text", {})
+    manual += [texts.get(n, n) for n in e.get("notes", [])]
+    total = sum(len(e.get(k, [])) for k in ("packages", "aur", "flatpaks", "remove", "services", "user_services", "groups"))
+    if not problems:
+        return Result(OK, f"All {total} apps and settings found earlier on this laptop are in place.",
+                      manual=" ".join(manual))
+    return Result(FAIL, _cap("; ".join(problems)) + ".",
+                  Fix("Restored apps and settings found on this laptop", script, after=" ".join(after)),
+                  manual=" ".join(manual))
 
 
 def c_dns(ctx):
@@ -459,6 +517,7 @@ CHECKS = [
     Check("webcam-page", "Webcam settings page installed", "kcm-webcam", c_webcam_page),
     Check("webcam-service", "Webcam settings restored automatically", "kcm-webcam", c_webcam_service),
     Check("nordvpn", "NordVPN ready", "nordvpn", c_nordvpn),
+    Check("extras", "Apps and settings found on this laptop", "also-set-up-on-this-laptop-found-by-checkup", c_extras),
     Check("dns", "Internet name lookups", "dns", c_dns),
 ]
 

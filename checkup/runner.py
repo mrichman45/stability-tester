@@ -1,22 +1,24 @@
-"""Turn chosen fixes into one plan and run it: file edits first, then one visible shell script."""
+"""Turn chosen fixes into one plan and run it: file edits first, then the commands, in order.
+
+Commands that need administrator rights go through the one administrator session (root.py),
+so the password is asked at most once. Plans with only user-level commands need no password.
+"""
 
 import os
 import re
-import shutil
 import subprocess
-import time
 from dataclasses import dataclass, field
 
-from .util import HOME, shell_quote
+from .root import RootSession
 
-WORKDIR = HOME / ".cache/checkup"
+STEP = "\x1eSTEP"
 
 
 @dataclass
 class Plan:
-    items: list                                     # [(Check, Result)] being fixed
+    items: list                                       # [(Check, Result)] being fixed
     python_steps: list = field(default_factory=list)  # [(title, callable)]
-    script: list = field(default_factory=list)
+    script: list = field(default_factory=list)        # command lines (see steps())
     after: list = field(default_factory=list)
     dangers: list = field(default_factory=list)
     previews: list = field(default_factory=list)
@@ -25,13 +27,16 @@ class Plan:
     def fixed_by(self):
         return {c.id: r.fix.summary for c, r in self.items}
 
+    @property
+    def needs_admin(self):
+        return any(k in ("root", "build", "aur") for k, _ in steps(self.script))
+
     def describe(self):
-        """Human-readable summary for the confirmation dialog / terminal prompt."""
         parts = ["Fixes:"] + [f"  • {c.title}: {r.fix.summary}" for c, r in self.items]
         if self.python_steps:
             parts += ["", "Files Checkup edits for you (backed up first):"] + [f"  • {t}" for t, _ in self.python_steps]
         if self.script:
-            parts += ["", "Commands (run in a terminal window you can watch):"] + [f"  $ {l}" for l in self.script]
+            parts += ["", "Commands, in order:"] + [f"  $ {display(l)}" for l in self.script]
         if self.dangers:
             parts += ["", "Please read:"] + [f"  ! {d}" for d in self.dangers]
         if self.after:
@@ -39,12 +44,36 @@ class Plan:
         return "\n".join(parts)
 
 
+def display(line):
+    if line.startswith("@build "):
+        return f"build and install the package in {line[7:]}"
+    if line.startswith("@aur "):
+        return f"build and install {line[5:]} from the AUR"
+    return line
+
+
+def steps(lines):
+    """Command lines -> [(kind, value)]. 'sudo X' runs X as root; '@build DIR' and '@aur PKG'
+    build as you and install as root; everything else runs as you."""
+    out = []
+    for line in lines:
+        if line.startswith("sudo "):
+            out.append(("root", line[5:]))
+        elif line.startswith("@build "):
+            out.append(("build", line[7:].strip()))
+        elif line.startswith("@aur "):
+            out.append(("aur", line[5:].strip()))
+        else:
+            out.append(("user", line))
+    return out
+
+
 _SYU = re.compile(r"^sudo pacman -Syu\b(.*)$")
 _INSTALL = re.compile(r"^sudo pacman -S --needed (.+)$")
 
 
 def _merge_pacman(lines):
-    """One system update + one install instead of many pacman runs (fewer prompts, right order)."""
+    """One system update + one install instead of many pacman runs, placed first."""
     syu, pkgs, rest = False, [], []
     for line in lines:
         m = _SYU.match(line)
@@ -58,7 +87,6 @@ def _merge_pacman(lines):
             continue
         rest.append(line)
     pkgs = list(dict.fromkeys(pkgs))
-    # If the same package is requested from a specific repo, drop the plain request.
     named = {p.split("/", 1)[1] for p in pkgs if "/" in p}
     pkgs = [p for p in pkgs if "/" in p or p not in named]
     head = []
@@ -98,56 +126,30 @@ def run_python_steps(plan):
     return notes, errors
 
 
-def write_script(plan, title):
-    WORKDIR.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    path = WORKDIR / f"fix-{stamp}.sh"
-    status = WORKDIR / f"fix-{stamp}.status"
-    after = "".join(f"echo '  • {a.replace(chr(39), '')}'\n" for a in plan.after)
-    body = [
-        "#!/usr/bin/env bash",
-        f"status_file={shell_quote(status)}",
-        "pause() { [ -n \"${CHECKUP_NO_PAUSE:-}\" ] || read -rp 'Press Enter to close this window...'; }",
-        "trap 'echo 1 > \"$status_file\"; printf \"\\n\\e[31mA step failed, so the steps after it were not run.\\e[0m\\n\"; pause; exit 1' ERR",
-        "set -eE",
-        f"printf '\\e[1;36m== Checkup: %s ==\\e[0m\\n' {shell_quote(title)}",
-    ]
-    for line in plan.script:
-        body.append(f"printf '\\n\\e[1m$ %s\\e[0m\\n' {shell_quote(line)}")
-        body.append(line)
-    body += [
-        "echo 0 > \"$status_file\"",
-        "printf '\\n\\e[32mAll done.\\e[0m\\n'",
-    ]
-    if plan.after:
-        body += ["echo", "echo 'Afterwards:'", after.rstrip("\n")]
-    body.append("pause")
-    path.write_text("\n".join(body) + "\n")
-    path.chmod(0o755)
-    return path, status
-
-
-def terminal_command(script):
-    s = str(script)
-    for name, cmd in (("alacritty", ["alacritty", "-e", "bash", s]),
-                      ("konsole", ["konsole", "-e", "bash", s]),
-                      ("kitty", ["kitty", "bash", s]),
-                      ("foot", ["foot", "bash", s]),
-                      ("gnome-terminal", ["gnome-terminal", "--wait", "--", "bash", s]),
-                      ("xterm", ["xterm", "-e", "bash", s])):
-        if shutil.which(name):
-            return cmd
-    return None
-
-
-def read_status(status_path):
+def execute(plan, gui, on_line=print):
+    """Run the plan's commands, streaming output to on_line. Returns the exit code."""
+    if not plan.script:
+        return 0
+    if not plan.needs_admin:   # nothing needs a password: run here, as you
+        total = len(plan.script)
+        for n, line in enumerate(plan.script, 1):
+            on_line(f"{STEP} {n}/{total} user: {line}")
+            p = subprocess.Popen(["bash", "-c", line], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 stdin=subprocess.DEVNULL, text=True, cwd=os.path.expanduser("~"), errors="replace")
+            for out in p.stdout:
+                on_line(out.rstrip("\n"))
+            rc = p.wait()
+            if rc != 0:
+                on_line(f"This step failed (exit {rc}), so the steps after it were not run.")
+                return rc
+        return 0
+    session = RootSession.get(gui)
+    payload = [{"kind": k, ("cmd" if k in ("root", "user") else "dir" if k == "build" else "pkg"): v}
+               for k, v in steps(plan.script)]
     try:
-        return int(status_path.read_text().strip())
-    except (OSError, ValueError):
-        return None   # window closed before finishing
-
-
-def run_script_here(script):
-    """Terminal version: run inline (sudo prompts appear right here)."""
-    env = dict(os.environ, CHECKUP_NO_PAUSE="1")
-    return subprocess.call(["bash", str(script)], env=env)
+        for line in session.request("run-plan", steps=payload):
+            on_line(line)
+    except (PermissionError, RuntimeError) as e:
+        on_line(str(e))
+        return 126
+    return session.last_rc or 0

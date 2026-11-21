@@ -139,15 +139,16 @@ def record(cfg, machine, items, fixed_by=None):
 
 
 def sync_script(path):
-    """Shell lines that commit the guide and push it to GitHub, or None if it isn't in a git repo."""
+    """Commands that commit the guide (and the laptop profiles) and push them to GitHub,
+    or None if the guide isn't in a git clone."""
     repo = Path(path).resolve().parent
     while repo != repo.parent and not (repo / ".git").exists():
         repo = repo.parent
     if not (repo / ".git").exists():
         return None
-    r, g = shell_quote(repo), shell_quote(Path(path).resolve())
-    return [f"cd {r}",
-            f"git add {g}",
-            "git diff --cached --quiet || git commit -m \"Guide: fixes recorded by Checkup on $(hostname)\"",
-            "git pull --rebase",
-            "git push"]
+    r = shell_quote(repo)
+    files = [shell_quote(Path(path).resolve())] + ([shell_quote(repo / "machines.json")] if (repo / "machines.json").exists() else [])
+    return [f"cd {r} && git add {' '.join(files)}",
+            f"cd {r} && (git diff --cached --quiet || git commit -m \"Guides: updates recorded by Checkup on $(hostname)\")",
+            f"cd {r} && GIT_TERMINAL_PROMPT=0 git pull --rebase",
+            f"cd {r} && GIT_TERMINAL_PROMPT=0 git push"]

@@ -29,7 +29,8 @@ Checkup found gets fixed, it adds an entry to the [Fix log](#fix-log) at the bot
    cd ~/stability-tester && makepkg -si
    ```
 3. Open **Checkup** from the app menu, go to **My Setup**, and press **Set up this laptop**.
-   It recognises the laptop by its hardware, applies every fix in this guide, then lists anything
+   It recognises the laptop by its hardware, asks for your password once, applies every fix in this
+   guide (including the apps and settings listed under "Also set up on this laptop"), then lists anything
    that has to be done by hand (rebooting, BIOS settings, Secure Boot keys).
 4. After big updates, run **Stability → Test this laptop's profile** to check the fixes still work.
    **Reapply fixes** puts back anything an update broke.
@@ -180,6 +181,35 @@ nordvpn connect
 ```
 "Cannot reach System Daemon" means the service isn't running, or you haven't logged out and back in yet.
 VPNs often don't work on airplane Wi-Fi.
+---
+
+<!-- checkup:found:start -->
+## Also set up on this laptop (found by Checkup)
+
+Checkup found these on the laptop and added them to its profile, so **Set up this laptop** redoes them after a reinstall. Remove anything you don't want with **Review** on the My Setup tab.
+
+**Apps**
+```bash
+sudo pacman -S --needed firefox guvcview s-tui steam
+```
+
+**Flatpak apps**
+```bash
+flatpak install -y flathub com.discordapp.Discord
+```
+
+**Removed after installing**
+```bash
+sudo pacman -Rns kate
+```
+
+**Groups** (log out and back in afterwards)
+```bash
+sudo usermod -aG gamemode <your-username>
+sudo usermod -aG tester <your-username>
+```
+<!-- checkup:found:end -->
+
 ---
 
 ## Fix log

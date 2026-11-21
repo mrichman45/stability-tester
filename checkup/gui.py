@@ -6,13 +6,14 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPalette, QPen
+from PySide6.QtGui import QColor, QDesktopServices, QFontDatabase, QIcon, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QGroupBox,
                                QHBoxLayout, QHeaderView, QInputDialog, QLabel, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QProgressBar, QPushButton, QRadioButton, QSplitter,
+                               QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QSplitter,
                                QTabWidget, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from . import guide, runner
+from . import discover, guide, runner
+from .root import RootSession
 from .checks import FAIL, INFO, OK, SKIP, WARN, Context, run_checks
 from .machine import detect, profiles
 from .stability import StabilityOptions, StabilityRun
@@ -38,21 +39,74 @@ class Bridge(QObject):
     stability_done = Signal(object)
 
 
-def start_in_terminal(parent, plan, title, on_finished):
-    """Run a plan's script in a visible terminal window; call on_finished(exit_status or None)."""
-    script, status = runner.write_script(plan, title)
-    cmd = runner.terminal_command(script)
-    if not cmd:
-        QMessageBox.warning(parent, "No terminal found",
-                            f"Couldn't find a terminal app. Run this yourself:\n\nbash {script}")
-        on_finished(None)
-        return None
-    if cmd[0] == "konsole":
-        cmd.insert(1, "--nofork")
-    proc = QProcess(parent)
-    proc.finished.connect(lambda *_: on_finished(runner.read_status(status)))
-    proc.start(cmd[0], cmd[1:])
-    return proc
+class RunDialog(QDialog):
+    """Runs a plan inside the app and shows every command and its output live."""
+    line = Signal(str)
+    finished_rc = Signal(int)
+
+    def __init__(self, parent, plan, title):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(820, 520)
+        self.rc = None
+        lay = QVBoxLayout(self)
+        self.step = QLabel("Starting…" + ("  (you'll be asked for your password once)" if plan.needs_admin
+                                          and not RootSession.get(True).active else ""))
+        f = self.step.font()
+        f.setBold(True)
+        self.step.setFont(f)
+        lay.addWidget(self.step)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 0)
+        lay.addWidget(self.bar)
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        lay.addWidget(self.log)
+        self.after = QLabel("<b>Afterwards:</b> " + " ".join(html_escape(a) for a in plan.after) if plan.after else "")
+        self.after.setWordWrap(True)
+        self.after.setVisible(False)
+        lay.addWidget(self.after)
+        self.close_btn = QPushButton("Close")
+        self.close_btn.setEnabled(False)
+        self.close_btn.clicked.connect(self.accept)
+        lay.addWidget(self.close_btn, alignment=Qt.AlignRight)
+        self.line.connect(self.on_line)
+        self.finished_rc.connect(self.on_finished)
+
+        def work():
+            try:
+                rc = runner.execute(plan, True, on_line=self.line.emit)
+            except Exception as e:
+                self.line.emit(f"Error: {e}")
+                rc = 1
+            self.finished_rc.emit(rc)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_line(self, text):
+        if text.startswith(runner.STEP):
+            parts = text[len(runner.STEP):].strip().split(" ", 2)
+            n, total = parts[0].split("/")
+            self.bar.setRange(0, int(total))
+            self.bar.setValue(int(n) - 1)
+            self.step.setText(f"Step {n} of {total}: {runner.display(parts[2].split(': ', 1)[-1]) if len(parts) > 2 else ''}")
+            self.log.appendPlainText(f"\n$ {parts[2] if len(parts) > 2 else ''}")
+        else:
+            self.log.appendPlainText(text)
+
+    def on_finished(self, rc):
+        self.rc = rc
+        self.bar.setRange(0, 1)
+        self.bar.setValue(1)
+        self.step.setText("All done." if rc == 0 else ("Administrator access was refused." if rc == 126
+                                                        else "A step failed, so the steps after it were not run."))
+        self.after.setVisible(rc == 0 and bool(self.after.text()))
+        self.close_btn.setEnabled(True)
+
+    def reject(self):   # don't let Esc close it while running
+        if self.rc is not None:
+            super().reject()
 
 
 # ---------------------------------------------------------------- graph
@@ -144,6 +198,34 @@ class ChooseFixesDialog(QDialog):
         return [t for i, t in enumerate(self.todo) if self.list.item(i).checkState() == Qt.Checked]
 
 
+class ReviewDialog(QDialog):
+    """Everything the scan added to this laptop's profile; untick to remove."""
+
+    def __init__(self, parent, entries):
+        super().__init__(parent)
+        self.setWindowTitle("Found on this laptop")
+        self.resize(520, 480)
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("These are in this laptop's guide and profile, so <b>Set up this laptop</b> redoes them "
+                             "after a reinstall.<br>Untick anything you don't want; it won't be added again."))
+        self.list = QListWidget()
+        for id, text in entries:
+            item = QListWidgetItem(text)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            item.setData(Qt.UserRole, id)
+            self.list.addItem(item)
+        lay.addWidget(self.list)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+
+    def removed(self):
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
+                if self.list.item(i).checkState() != Qt.Checked]
+
+
 class SetupTab(QWidget):
     def __init__(self, win):
         super().__init__()
@@ -165,12 +247,16 @@ class SetupTab(QWidget):
         self.btn_setup = QPushButton(QIcon.fromTheme("run-build"), "Set up this laptop")
         self.btn_setup.setToolTip("Apply every fix from the guide that belongs on this laptop, in one go")
         self.btn_setup.clicked.connect(self.setup_all)
+        self.btn_review = QPushButton(QIcon.fromTheme("view-list-details"), "Review found items")
+        self.btn_review.setToolTip("Apps and settings the scan found on this laptop and added to its guide")
+        self.btn_review.clicked.connect(self.review)
         f = self.btn_setup.font()
         f.setBold(True)
         self.btn_setup.setFont(f)
         top.addWidget(self.machine_label)
         top.addWidget(change)
         top.addStretch()
+        top.addWidget(self.btn_review)
         top.addWidget(self.btn_check)
         top.addWidget(self.btn_setup)
         lay.addLayout(top)
@@ -235,7 +321,7 @@ class SetupTab(QWidget):
 
     # ----- running checks
     def set_busy(self, busy, text=""):
-        for b in (self.btn_check, self.btn_setup, self.btn_fix, self.btn_ignore):
+        for b in (self.btn_check, self.btn_setup, self.btn_fix, self.btn_ignore, self.btn_review):
             b.setEnabled(not busy)
         if text:
             self.summary.setText(text)
@@ -243,12 +329,23 @@ class SetupTab(QWidget):
             self.show_detail()
 
     def run_checks(self):
-        self.set_busy(True, "Checking… (you may be asked for your password to read Secure Boot and drive status)")
-        machine, ignored = self.win.machine, list(self.win.cfg.get("ignored", []))
+        self.set_busy(True, "Scanning and checking… (you may be asked for your password once per session)")
+        cfg, ignored = self.win.cfg, list(self.win.cfg.get("ignored", []))
+        machine = self.win.machine
 
         def work():
             try:
-                res = run_checks(Context(machine, gui=True, cfg=self.win.cfg), ignored)
+                found = []
+                if machine.id != "unknown":
+                    # Anything set up on this laptop that the guide doesn't cover yet goes into it automatically.
+                    skip = cfg.get("ignored_findings", {}).get(machine.id, [])
+                    found = discover.scan(machine, machine.extras, skip)
+                    discover.save_findings(machine, found)
+                    m = detect(cfg.get("machine", ""))
+                    if m.id == machine.id:
+                        machine.extras = m.extras
+                    discover.write_guide_section(guide.guide_path(cfg, machine), machine.extras)
+                res = (run_checks(Context(machine, gui=True, cfg=cfg), ignored), found)
             except Exception as e:
                 res = e
             self.bridge.checks_done.emit(res)
@@ -259,6 +356,7 @@ class SetupTab(QWidget):
         if isinstance(res, Exception):
             self.set_busy(False, f"Checking failed: {res}")
             return
+        res, found = res
         self.results = res
         self.tree.clear()
         for i, (c, r) in enumerate(res):
@@ -281,8 +379,14 @@ class SetupTab(QWidget):
             text += f" — {fixable} can be fixed automatically: press <b>Set up this laptop</b>."
         elif not counts[FAIL] and not counts[WARN]:
             text += " — everything from the guide is in place."
+        if found:
+            text += (f"<br>Found {len(found)} new thing{'s' if len(found) != 1 else ''} on this laptop and added "
+                     f"{'them' if len(found) != 1 else 'it'} to its guide: "
+                     + ", ".join(html_escape(f.value) for f in found[:8]) + ("…" if len(found) > 8 else "")
+                     + " (<b>Review found items</b> to remove any).")
         if added:
             text += "<br>Added to the guide's fix log: " + ", ".join(html_escape(a) for a in added)
+        if found or added:
             self.win.guide_tab.reload()
         self.set_busy(False, text)
         if self.tree.topLevelItemCount():
@@ -348,6 +452,25 @@ class SetupTab(QWidget):
             self.win.tabs.setCurrentWidget(self.win.guide_tab)
             self.win.guide_tab.jump(c.guide)
 
+    def review(self):
+        entries = discover.items(self.win.machine.extras)
+        if not entries:
+            QMessageBox.information(self, "Nothing found yet",
+                                    "The scan hasn't found any extra apps or settings on this laptop.")
+            return
+        dlg = ReviewDialog(self, entries)
+        if dlg.exec() and dlg.removed():
+            gone = dlg.removed()
+            discover.remove_items(self.win.machine, gone)
+            ign = self.win.cfg.setdefault("ignored_findings", {}).setdefault(self.win.machine.id, [])
+            ign += [g for g in gone if g not in ign]
+            guide.save_config(self.win.cfg)
+            m = detect(self.win.cfg.get("machine", ""))
+            self.win.machine.extras = m.extras
+            discover.write_guide_section(guide.guide_path(self.win.cfg, self.win.machine), self.win.machine.extras)
+            self.win.guide_tab.reload()
+            self.run_checks()
+
     # ----- fixing
     def fix_selected(self):
         c, r = self.current()
@@ -373,7 +496,8 @@ class SetupTab(QWidget):
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle("Confirm")
         box.setText(f"Apply {len(plan.items)} fix{'es' if len(plan.items) != 1 else ''}?")
-        info = "Commands that need your password run in a terminal window so you can watch them."
+        info = ("You'll see every command and its output while it runs."
+                + (" You'll be asked for your password once." if plan.needs_admin and not RootSession.get(True).active else ""))
         if plan.dangers:
             info += "\n\n" + "\n".join("⚠ " + d for d in plan.dangers)
         box.setInformativeText(info)
@@ -391,19 +515,10 @@ class SetupTab(QWidget):
         self.pending_fixed_by.update(plan.fixed_by)
         if self.win.machine.id != "unknown":
             guide.remember_fixes(self.win.machine, plan.fixed_by)
-        if not plan.script:
-            self.run_checks()
-            return
-        self.set_busy(True, "Running the fixes in the terminal window… Checkup will check again when it closes.")
-
-        def finished(status):
-            msg = {None: "The terminal window closed before the fixes finished.",
-                   0: None}.get(status, "A step failed. The terminal window showed which one.")
-            if msg:
-                QMessageBox.information(self, "Fixes", msg)
-            self.run_checks()
-
-        self.proc = start_in_terminal(self, plan, title, finished)
+        if plan.script:
+            dlg = RunDialog(self, plan, title)
+            dlg.exec()
+        self.run_checks()
 
     def show_manual_reminders(self):
         manual = [(c, r) for c, r in self.results if r.status in (FAIL, WARN, INFO) and r.manual and not r.fix]
@@ -665,7 +780,12 @@ class GuideTab(QWidget):
                                     "stability-tester repo to ~/stability-tester and Checkup will use its guides.")
             return
         plan = runner.Plan(items=[], script=lines)
-        self.proc = start_in_terminal(self, plan, "Syncing the guide with GitHub", lambda status: self.reload())
+        dlg = RunDialog(self, plan, "Syncing the guides with GitHub")
+        dlg.exec()
+        if dlg.rc not in (0, None):
+            QMessageBox.information(self, "Sync", "Syncing failed. If GitHub asked you to sign in, run "
+                                    "'gh auth login' once in a terminal (or set up an SSH key), then try again.")
+        self.reload()
 
 
 # ---------------------------------------------------------------- window
@@ -698,6 +818,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             run.cancel()
+        RootSession.get(True).close()
         event.accept()
 
 
