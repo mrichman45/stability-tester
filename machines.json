@@ -1,0 +1,92 @@
+{
+  "_help": "Laptop profiles (no personal details: laptops are recognised by hardware; a manual choice is saved only on the laptop, in ~/.config/checkup/config.json). 'checks' = the guide's fixes for this laptop (checkup/checks.py), applied by 'Set up this laptop'. 'health' = extra tests that a fix actually works (checkup/health.py); the profile test runs these plus every other item in 'checks'. 'limits' = temperatures in \u00b0C above which the stability test warns. 'guide' = this laptop's guide.",
+  "lenovo-i7": {
+    "label": "Lenovo i7-13620H",
+    "guide": "guides/lenovo-i7.md",
+    "cpu": [
+      "13620H"
+    ],
+    "product": [],
+    "checks": [
+      "updates",
+      "reboot",
+      "fastfetch",
+      "docker",
+      "vlc",
+      "ntfsprogs",
+      "windows-drive",
+      "usb-automount",
+      "dns"
+    ],
+    "health": [
+      "nvidia",
+      "wifi",
+      "docker",
+      "vlc",
+      "fastfetch",
+      "windows-drive"
+    ],
+    "limits": {
+      "cpu": 100,
+      "gpu": 87
+    }
+  },
+  "legion-i9": {
+    "label": "Lenovo Legion i9",
+    "guide": "guides/legion-i9.md",
+    "cpu": [
+      "i9-"
+    ],
+    "product": [
+      "legion"
+    ],
+    "checks": [
+      "updates",
+      "reboot",
+      "nvidia",
+      "secure-boot",
+      "terminal",
+      "konsole",
+      "shelly",
+      "usb-automount",
+      "camera",
+      "webcam-page",
+      "webcam-service",
+      "nordvpn",
+      "dns"
+    ],
+    "health": [
+      "nvidia",
+      "wifi",
+      "camera",
+      "webcam-service"
+    ],
+    "limits": {
+      "cpu": 100,
+      "gpu": 87
+    }
+  },
+  "msi-gf75": {
+    "label": "MSI GF75 Thin",
+    "guide": "guides/msi-gf75.md",
+    "cpu": [],
+    "product": [
+      "gf75"
+    ],
+    "checks": [
+      "updates",
+      "nvidia",
+      "reboot",
+      "usb-automount",
+      "dns"
+    ],
+    "health": [
+      "nvidia",
+      "wifi"
+    ],
+    "limits": {
+      "cpu": 95,
+      "gpu": 87
+    }
+  }
+}

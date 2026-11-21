@@ -1,0 +1,3 @@
+#!/bin/sh
+# Checkup in the terminal: checkup-cli setup | apply | stability | guide | machine
+exec python3 -c 'import sys; sys.path.insert(0, "/usr/lib/checkup"); from checkup.cli import main; sys.exit(main(sys.argv[1:]))' "$@"

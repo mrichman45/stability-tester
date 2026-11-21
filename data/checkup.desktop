@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Checkup
+GenericName=System checkup and setup
+Comment=Set up this laptop from the guide, check its fixes, and stress-test the hardware
+Exec=checkup
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Settings;Monitor;
+Keywords=stability;stress;test;setup;guide;fix;temperature;

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <action id="org.stabilitytester.checkup.root">
+    <description>Run Checkup's read-only hardware checks</description>
+    <message>Checkup needs administrator access to test memory and read disk health, Secure Boot status and the system log. It does not change anything.</message>
+    <icon_name>utilities-system-monitor</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/checkup/checkup-root</annotate>
+  </action>
+</policyconfig>

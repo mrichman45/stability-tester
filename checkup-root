@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Checkup's administrator helper. Runs only a fixed set of READ-ONLY / test actions as root:
+
+  checkup-root setup-info
+      Secure Boot status, sbctl verify, NTFS kernel messages (JSON on stdout).
+
+  checkup-root stability --ram MB --smart 0|1 --since EPOCH
+      memtester on MB of RAM (0 = skip), SMART data for every disk, kernel errors since EPOCH.
+
+It never changes the system. Fixes are run separately, visibly, in a terminal.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+
+os.environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
+os.environ["LC_ALL"] = "C.UTF-8"
+
+KLOG_PATTERN = re.compile(
+    r"mce:|machine check|hardware error|pcie bus error|aer:|nvrm: xid|amdgpu.*(timeout|ring .* reset)|i/o error|segfault",
+    re.I)
+
+
+def out(cmd, timeout=60):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout + p.stderr
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return 127, str(e)
+
+
+def setup_info():
+    info = {}
+    rc, text = out(["sbctl", "status"])
+    if rc != 127:
+        info["sbctl_status"] = text
+        _, info["sbctl_verify"] = out(["sbctl", "verify"])
+    _, klog = out(["journalctl", "-k", "-b", "--no-pager", "-o", "short-monotonic"])
+    info["kernel_log"] = "\n".join(l for l in klog.splitlines() if "ntfs3" in l)
+    print(json.dumps(info))
+
+
+def disks():
+    rc, text = out(["lsblk", "-dno", "NAME,TYPE"])
+    return [l.split()[0] for l in text.splitlines()
+            if len(l.split()) == 2 and l.split()[1] == "disk" and not l.startswith(("zram", "loop"))]
+
+
+def stability(args):
+    ram, smart, since = 0, 1, 0
+    i = 0
+    while i < len(args):
+        if args[i] in ("--ram", "--smart", "--since") and i + 1 < len(args) and args[i + 1].isdigit():
+            val = int(args[i + 1])
+            if args[i] == "--ram":
+                ram = min(val, 65536)
+            elif args[i] == "--smart":
+                smart = val
+            else:
+                since = val
+            i += 2
+        else:
+            sys.exit(f"bad argument: {args[i]}")
+
+    if ram > 0:
+        print("STAGE ram", flush=True)
+        try:
+            p = subprocess.Popen(["memtester", f"{ram}M", "1"], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+            for line in p.stdout:
+                line = line.replace("\b", "").strip()
+                if line:
+                    print("MEMTESTER " + line, flush=True)
+            print(f"RAM_RC {p.wait()}", flush=True)
+        except FileNotFoundError:
+            print("RAM_RC 127", flush=True)
+
+    if smart:
+        print("STAGE disks", flush=True)
+        for d in disks():
+            rc, text = out(["smartctl", "-j", "-a", f"/dev/{d}"])
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                data = {"error": text[-500:]}
+            print("SMART " + json.dumps({"disk": d, "data": data}), flush=True)
+
+    print("STAGE log", flush=True)
+    rc, klog = out(["journalctl", "-k", "-b", "--since", f"@{since}", "--no-pager", "-o", "short-monotonic"])
+    for line in klog.splitlines():
+        if KLOG_PATTERN.search(line):
+            print("KLOG " + line, flush=True)
+    print("DONE", flush=True)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    if sys.argv[1] == "setup-info":
+        setup_info()
+    elif sys.argv[1] == "stability":
+        stability(sys.argv[2:])
+    else:
+        sys.exit(f"unknown action: {sys.argv[1]}")

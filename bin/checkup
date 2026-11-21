@@ -1,0 +1,3 @@
+#!/bin/sh
+# Checkup desktop app
+exec python3 -c 'import sys; sys.path.insert(0, "/usr/lib/checkup"); from checkup.gui import main; main()' "$@"
