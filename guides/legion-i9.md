@@ -105,7 +105,9 @@ The safety net instead of a second kernel is the **boot snapshots**: CachyOS sna
 updates, and the boot menu can start from one.
 
 Kernel packages that belong together: `linux-cachyos-lts`, `linux-cachyos-lts-headers`,
-`linux-cachyos-lts-nvidia-open`.
+`linux-cachyos-lts-nvidia-open`. Checkup's **One kernel, with its NVIDIA module** check makes sure exactly these
+are installed: it adds a missing piece, and removes any extra kernel (never the one that's running).
+The kernel this laptop should use is set by `"kernel"` in `machines.json`; change it there if you switch.
 
 **If a newer kernel is ever needed** (a new game or device that needs it), switch safely:
 ```bash
@@ -213,6 +215,8 @@ er-save-manager-update
 - Right-click the icon: **Check for updates now**, or **Open previous version** if an update misbehaves.
 - `er-save-manager-update --enable-auto` also checks daily. Settings and save backups are never touched.
 - FUSE error when it starts: `sudo pacman -S fuse2`.
+- Checkup's **Elden Ring Save Manager updates itself** check installs the updater (and the Save Manager) after a
+  reinstall, and keeps the updater script in step with this repo.
 
 **The Convergence mod** keeps its own save file, separate from normal characters, and updates through its
 own downloader. Before updating it: back up the Convergence save, and check the mod supports the current

@@ -1,6 +1,6 @@
 # Build and install from this folder with: makepkg -si
 pkgname=checkup
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="One-button laptop setup from our guide, profile checks, and hardware stability tests"
 arch=('any')
@@ -25,4 +25,5 @@ package() {
   install -d "$pkgdir/usr/share/checkup/guides"
   install -m644 guides/*.md "$pkgdir/usr/share/checkup/guides/"
   install -Dm644 machines.json "$pkgdir/usr/share/checkup/machines.json"
+  install -Dm755 tools/er-save-manager-update "$pkgdir/usr/share/checkup/tools/er-save-manager-update"
 }

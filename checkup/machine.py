@@ -23,6 +23,7 @@ class Machine:
     limits: dict = field(default_factory=dict)   # {"cpu": °C, "gpu": °C} warning thresholds
     guide: str = "guides/README.md"              # this laptop's guide, relative to the repo
     extras: dict = field(default_factory=dict)   # things found on the laptop by the scan (discover.py)
+    kernel: str = ""                             # the one kernel package this laptop should have
 
 
 def profiles():
@@ -55,7 +56,7 @@ def detect(override=""):
         p = profs[mid]
         return Machine(mid, p.get("label", mid), cpu, product, list(p.get("checks", [])), how,
                        list(p.get("health", [])), dict(p.get("limits", {})), p.get("guide", "guides/README.md"),
-                       merged_extras(p.get("extras", {}), mid))
+                       merged_extras(p.get("extras", {}), mid), p.get("kernel", ""))
 
     if override == "none":   # "none of these": general checks only
         return Machine("unknown", "Other computer", cpu, product, ["updates", "reboot", "dns"], "your choice")

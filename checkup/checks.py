@@ -7,6 +7,7 @@ checks is installed anyway (so fixes carry over between laptops).
 
 import json
 import os
+import re
 import socket
 import time
 from dataclasses import dataclass, field
@@ -159,6 +160,88 @@ def c_nvidia(ctx):
         return Result(WARN, detail, manual="Wait a few hours for the 32-bit driver, then update.")
 
     return Result(OK, f"NVIDIA driver {upstream(main)}" + (" with a matching 32-bit copy." if lib32 else "."))
+
+
+KERNEL_RE = re.compile(r"^linux(-cachyos(-[a-z0-9]+)*|-lts|-zen|-hardened|-rt(-lts)?)?$")
+KERNEL_EXTRA = ("-headers", "-nvidia", "-nvidia-open", "-api-headers", "-firmware", "-docs", "-zfs")
+
+
+def installed_kernels():
+    rc, out, _ = run(["pacman", "-Qq"])
+    return [p for p in out.split() if KERNEL_RE.match(p) and not p.endswith(KERNEL_EXTRA)] if rc == 0 else []
+
+
+def running_kernel_package():
+    return read(f"/usr/lib/modules/{os.uname().release}/pkgbase").strip()
+
+
+def c_kernel(ctx):
+    want = getattr(ctx.machine, "kernel", "")
+    if not want or not ctx.expects("kernel"):
+        return None
+    have = installed_kernels()
+    running = running_kernel_package()
+    nvidia = bool(pkg_version("nvidia-utils"))
+    if want not in have:
+        script = [f"sudo pacman -S --needed {want} {want}-headers" + (f" {want}-nvidia-open" if nvidia else "")]
+        return Result(FAIL, f"{want} isn't installed (installed: {', '.join(have) or 'none'}).",
+                      Fix(f"Installed {want}", script,
+                          after="Run 'sudo sbctl verify' and sign anything marked ✗, reboot into it, then run Checkup "
+                                "again to remove the other kernels."))
+    missing = [p for p in ([f"{want}-headers"] + ([f"{want}-nvidia-open"] if nvidia else [])) if not pkg_version(p)]
+    if nvidia and pkg_version(f"{want}-nvidia"):
+        missing = [m for m in missing if not m.endswith("-nvidia-open")]
+    if missing:
+        return Result(FAIL, f"{want} is missing: {', '.join(missing)}"
+                      + (" (without it, the NVIDIA driver won't load)." if any("nvidia" in m for m in missing) else "."),
+                      Fix(f"Installed {', '.join(missing)}", [f"sudo pacman -S --needed {' '.join(missing)}"],
+                          after="Reboot afterwards."))
+    others = [k for k in have if k != want]
+    if others:
+        if running in others:
+            return Result(WARN, f"Running {running}, but this laptop should only have {want}.",
+                          manual=f"Reboot and choose {want} in the boot menu, then run Checkup again to remove {', '.join(others)}.")
+        pkgs = [p for k in others for p in (k, f"{k}-headers", f"{k}-nvidia", f"{k}-nvidia-open") if pkg_version(p)]
+        return Result(WARN, f"Extra kernel{'s' if len(others) > 1 else ''} installed: {', '.join(others)}. "
+                      f"This laptop uses only {want}.",
+                      Fix(f"Removed extra kernels ({', '.join(others)})", [f"sudo pacman -Rns {' '.join(pkgs)}"],
+                          danger="Only the kernel you're running now is kept."))
+    if running and running != want:
+        return Result(WARN, f"Running {running}, expected {want}.", manual="Reboot to start the right kernel.")
+    return Result(OK, f"Only {want} is installed" + (" with its NVIDIA module." if nvidia else "."))
+
+
+ERSM_TOOL = "tools/er-save-manager-update"
+ERSM_TARGET = HOME / ".local/bin/er-save-manager-update"
+
+
+def _ersm_source():
+    for base in (HOME / "stability-tester", Path("/usr/share/checkup"), Path(__file__).resolve().parent.parent):
+        if (base / ERSM_TOOL).exists():
+            return base / ERSM_TOOL
+    return None
+
+
+def c_er_save_manager(ctx):
+    if not ctx.expects("er-save-manager"):
+        return None
+    src = _ersm_source()
+    installed = ERSM_TARGET.exists()
+    app = HOME / "Applications/er-save-manager/ER-Save-Manager.AppImage"
+    desktop = HOME / ".local/share/applications/er-save-manager.desktop"
+    if not src:
+        return Result(SKIP, "The updater script isn't available (update the stability-tester repo or Checkup).")
+    current = installed and read(ERSM_TARGET) == read(src)
+    script = []
+    if not current:
+        script.append(f"install -Dm755 {shell_quote(src)} {shell_quote(ERSM_TARGET)}")
+    if not current or not app.exists() or "--launch" not in read(desktop):
+        script.append(f"{shell_quote(ERSM_TARGET)}")
+    if not script:
+        return Result(OK, "The Elden Ring Save Manager is installed and updates itself.")
+    problem = ("the updater isn't installed" if not installed else "the updater is out of date" if not current
+               else "the Save Manager or its app menu entry is missing")
+    return Result(FAIL, _cap(problem) + ".", Fix("Installed the Elden Ring Save Manager updater", script))
 
 
 def c_secure_boot(ctx):
@@ -503,6 +586,7 @@ CHECKS = [
     Check("updates", "System up to date", "reading-an-update-list", c_updates),
     Check("nvidia", "NVIDIA driver versions match", "nvidia-mismatch", c_nvidia),
     Check("reboot", "Kernel update finished (rebooted)", "reading-an-update-list", c_reboot),
+    Check("kernel", "One kernel, with its NVIDIA module", "kernel", c_kernel),
     Check("secure-boot", "Secure Boot files signed", "secure-boot", c_secure_boot),
     Check("terminal", "Alacritty is the default terminal", "konsole", c_default_terminal),
     Check("konsole", "Konsole stays removed", "konsole", c_konsole, preference=True),
@@ -517,6 +601,7 @@ CHECKS = [
     Check("webcam-page", "Webcam settings page installed", "kcm-webcam", c_webcam_page),
     Check("webcam-service", "Webcam settings restored automatically", "kcm-webcam", c_webcam_service),
     Check("nordvpn", "NordVPN ready", "nordvpn", c_nordvpn),
+    Check("er-save-manager", "Elden Ring Save Manager updates itself", "elden-ring", c_er_save_manager),
     Check("extras", "Apps and settings found on this laptop", "also-set-up-on-this-laptop-found-by-checkup", c_extras),
     Check("dns", "Internet name lookups", "dns", c_dns),
 ]
