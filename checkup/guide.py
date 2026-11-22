@@ -49,9 +49,8 @@ def guide_path(cfg, machine):
     custom = (cfg.get("guide_paths") or {}).get(machine.id)
     if custom and Path(custom).exists():
         return Path(custom)
-    for base in (CLONE_DIR, REPO_DIR):
-        if (base / rel).exists() and (base / ".git").exists():
-            return base / rel
+    if (CLONE_DIR / rel).exists() and (CLONE_DIR / ".git").exists():
+        return CLONE_DIR / rel
     local = HOME / ".local/share/checkup" / rel
     if not local.exists():
         local.parent.mkdir(parents=True, exist_ok=True)

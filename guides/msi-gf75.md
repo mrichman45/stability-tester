@@ -100,6 +100,29 @@ An NVIDIA update was installed but the old driver is still loaded. Reboot.
 
 ---
 
+## Gaming
+
+<a id="hybrid-gpu"></a>
+### Which graphics card a game uses
+
+The Intel graphics drives the screen, and the GTX 1650 wakes up when a program asks for it.
+- **Most Steam games (through Proton) pick the NVIDIA card by themselves.**
+- Some programs (older OpenGL games, launchers, emulators) stay on the Intel graphics. Start those with
+  `prime-run`: in Steam, right-click the game → **Properties** → **Launch Options**: `prime-run %command%`
+
+To check while a game is running: `nvidia-smi`. If the game is listed under **Processes**, it's on the NVIDIA card.
+
+<a id="anti-cheat"></a>
+### Will a game run?
+
+A kernel change never decides this. What blocks games on Linux is **anti-cheat** in some online games
+(Valorant, Call of Duty and Battlefield 6, for example). Single-player games almost always work.
+Before buying, check the game on [ProtonDB](https://www.protondb.com) and the
+[GamingOnLinux anti-cheat list](https://www.gamingonlinux.com/anticheat).
+The GTX 1650 is an entry-level card: check a game's minimum requirements too.
+
+---
+
 ## Drives
 
 <a id="usb-automount"></a>
@@ -126,6 +149,13 @@ Check how long a lookup takes: `time getent hosts wikipedia.org` should be well 
 On **airplane Wi-Fi** this is normal: satellite links add about half a second to every lookup.
 Don't change DNS settings there (airlines often block outside DNS) and postpone big updates until you land.
 Elsewhere: restart the router, or set DNS to `1.1.1.1, 9.9.9.9` in the Wi-Fi connection's IPv4 settings.
+
+<a id="harmless"></a>
+### Harmless messages in the system log
+
+- `wpa_supplicant ... multicast RX registrations are not supported`: Wi-Fi Direct isn't supported by the
+  Wi-Fi driver. Normal Wi-Fi isn't affected.
+
 ---
 
 ## Fix log

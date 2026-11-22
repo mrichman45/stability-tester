@@ -88,10 +88,44 @@ a mismatched driver means a black screen at boot.
 ### "Driver/library version mismatch" from nvidia-smi
 An NVIDIA update was installed but the old driver is still loaded. Reboot.
 
-<a id="secure-boot"></a>
-### Secure Boot after a kernel update
+### NVIDIA extras updating a day later
+After a driver update, `opencl-nvidia`, `lib32-opencl-nvidia`, `nvidia-settings` and `libxnvctrl` may arrive
+in a later update as CachyOS finishes rebuilding them. That's normal and safe. No reboot is needed for
+these alone; restart apps that use OpenCL (Blender, DaVinci Resolve, AI tools).
 
-sbctl re-signs the kernel automatically. Before rebooting after a kernel update, check:
+<a id="kernel"></a>
+### Kernel: one kernel, the LTS one
+
+This laptop runs **only** `linux-cachyos-lts`, by choice:
+- it changes the least, which matters with no second kernel to fall back on;
+- fewer updates means fewer NVIDIA catch-ups, Secure Boot re-signs and reboots;
+- nothing on this laptop needs a newer kernel (checked: NVIDIA, Wi-Fi, webcam, Secure Boot, Proton gaming).
+
+The safety net instead of a second kernel is the **boot snapshots**: CachyOS snapshots the system before
+updates, and the boot menu can start from one.
+
+Kernel packages that belong together: `linux-cachyos-lts`, `linux-cachyos-lts-headers`,
+`linux-cachyos-lts-nvidia-open`.
+
+**If a newer kernel is ever needed** (a new game or device that needs it), switch safely:
+```bash
+sudo pacman -S linux-cachyos linux-cachyos-headers linux-cachyos-nvidia-open
+sudo sbctl verify                       # sign anything marked ✗ with: sudo sbctl sign -s <file>
+# reboot, choose the new kernel, check `uname -r` and run Checkup's profile test, then:
+sudo pacman -Rns linux-cachyos-lts linux-cachyos-lts-headers linux-cachyos-lts-nvidia-open
+```
+Never remove the running kernel before the new one has booted successfully.
+
+To check for hardware problems a kernel change might fix:
+```bash
+journalctl -b -p err --no-pager | grep -iE 'firmware|driver|not supported|failed to load' | head -20
+```
+
+<a id="secure-boot"></a>
+### Secure Boot after a kernel or bootloader update
+
+sbctl re-signs the kernel automatically. Before rebooting after an update that includes the kernel
+(`linux-cachyos-lts`) **or the bootloader** (`limine`), check:
 ```bash
 sudo sbctl verify                      # every file should be ✓ signed
 sudo sbctl sign -s /path/from/the/list # only if something shows ✗
@@ -142,6 +176,50 @@ If the page disappears after a big KDE update, run `makepkg -sif` in the kcm-web
 
 ---
 
+## Gaming
+
+<a id="hybrid-gpu"></a>
+### Which graphics card a game uses (GPU mode: Auto)
+
+The Intel graphics drives the screen, and the NVIDIA card wakes up when a program asks for it.
+- **Most Steam games (through Proton) pick the NVIDIA card by themselves.**
+- Some programs (older OpenGL games, launchers, emulators) stay on the Intel graphics. Start those with
+  `prime-run`: in Steam, right-click the game → **Properties** → **Launch Options**: `prime-run %command%`
+
+To check while a game is running: `nvidia-smi`. If the game is listed under **Processes**, it's on the NVIDIA card.
+Lenovo's automatic GPU switching relies partly on its Windows software; on Linux, Auto behaves like Hybrid.
+
+<a id="anti-cheat"></a>
+### Will a game run?
+
+A kernel change never decides this. What blocks games on Linux is **anti-cheat** in some online games
+(Valorant, Call of Duty and Battlefield 6, for example). Single-player games almost always work.
+Before buying, check the game on [ProtonDB](https://www.protondb.com) and the
+[GamingOnLinux anti-cheat list](https://www.gamingonlinux.com/anticheat).
+
+- **007 First Light:** Steam Deck Verified, no anti-cheat, plays fine on CachyOS. Known quirk: the resolution
+  may not be saved between sessions; set it again in the game's settings.
+
+<a id="elden-ring"></a>
+### Elden Ring: Save Manager that updates itself
+
+`tools/er-save-manager-update` in this repo installs the Linux version of the Elden Ring Save Manager
+(Hapfel1/er-save-manager) and keeps it up to date:
+```bash
+install -Dm755 ~/stability-tester/tools/er-save-manager-update ~/.local/bin/er-save-manager-update
+er-save-manager-update
+```
+- Clicking its icon checks for an update first (8 seconds at most), then opens the app.
+- Right-click the icon: **Check for updates now**, or **Open previous version** if an update misbehaves.
+- `er-save-manager-update --enable-auto` also checks daily. Settings and save backups are never touched.
+- FUSE error when it starts: `sudo pacman -S fuse2`.
+
+**The Convergence mod** keeps its own save file, separate from normal characters, and updates through its
+own downloader. Before updating it: back up the Convergence save, and check the mod supports the current
+Elden Ring version (its Discord or Nexus page). Never open modded saves in the unmodded game.
+
+---
+
 ## Drives
 
 <a id="usb-automount"></a>
@@ -169,6 +247,13 @@ On **airplane Wi-Fi** this is normal: satellite links add about half a second to
 Don't change DNS settings there (airlines often block outside DNS) and postpone big updates until you land.
 Elsewhere: restart the router, or set DNS to `1.1.1.1, 9.9.9.9` in the Wi-Fi connection's IPv4 settings.
 
+<a id="harmless"></a>
+### Harmless messages in the system log
+
+- `wpa_supplicant ... nl80211: kernel reports: multicast RX registrations are not supported`:
+  Wi-Fi Direct (connecting to printers or phones without a router) isn't supported by the Wi-Fi driver.
+  Normal Wi-Fi isn't affected.
+
 <a id="nordvpn"></a>
 ### NordVPN
 
@@ -181,35 +266,6 @@ nordvpn connect
 ```
 "Cannot reach System Daemon" means the service isn't running, or you haven't logged out and back in yet.
 VPNs often don't work on airplane Wi-Fi.
----
-
-<!-- checkup:found:start -->
-## Also set up on this laptop (found by Checkup)
-
-Checkup found these on the laptop and added them to its profile, so **Set up this laptop** redoes them after a reinstall. Remove anything you don't want with **Review** on the My Setup tab.
-
-**Apps**
-```bash
-sudo pacman -S --needed firefox guvcview s-tui steam
-```
-
-**Flatpak apps**
-```bash
-flatpak install -y flathub com.discordapp.Discord
-```
-
-**Removed after installing**
-```bash
-sudo pacman -Rns kate
-```
-
-**Groups** (log out and back in afterwards)
-```bash
-sudo usermod -aG gamemode <your-username>
-sudo usermod -aG tester <your-username>
-```
-<!-- checkup:found:end -->
-
 ---
 
 ## Fix log

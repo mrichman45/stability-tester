@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# er-save-manager-update: keep Elden Ring Save Manager (Linux AppImage) up to date from GitHub.
+#
+#   er-save-manager-update             update if a new version is out (installs it the first time)
+#   er-save-manager-update --check     only say whether an update is available
+#   er-save-manager-update --force     reinstall the latest version
+#   er-save-manager-update --launch    check for an update (quickly), then open the app
+#                                      (used by the app menu icon; right-click it for "Check for updates now")
+#   er-save-manager-update --enable-auto    check daily and at login (systemd user timer)
+#   er-save-manager-update --disable-auto
+#
+# Your settings and save backups are not touched: only the AppImage is replaced, and the
+# previous version is kept as a backup next to it.
+
+set -euo pipefail
+
+REPO="${ERSM_REPO:-Hapfel1/er-save-manager}"
+DIR="${ERSM_DIR:-$HOME/Applications/er-save-manager}"
+APP="$DIR/ER-Save-Manager.AppImage"
+VERSION_FILE="$DIR/VERSION"
+DESKTOP="$HOME/.local/share/applications/er-save-manager.desktop"
+UNIT_DIR="$HOME/.config/systemd/user"
+SELF="$(readlink -f "$0")"
+
+say() {
+    echo "$1"
+    if [ -n "${ERSM_NOTIFY:-}" ] && command -v notify-send >/dev/null 2>&1; then
+        notify-send -a "Elden Ring Save Manager" -i system-software-update "Elden Ring Save Manager" "$1" || true
+    fi
+}
+
+need() {
+    for c in "$@"; do
+        command -v "$c" >/dev/null 2>&1 || { echo "Missing '$c'. Install it with: sudo pacman -S --needed $c"; exit 1; }
+    done
+}
+
+enable_auto() {
+    mkdir -p "$UNIT_DIR"
+    cat >"$UNIT_DIR/er-save-manager-update.service" <<EOF
+[Unit]
+Description=Update Elden Ring Save Manager
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=ERSM_NOTIFY=1
+ExecStart=$SELF
+EOF
+    cat >"$UNIT_DIR/er-save-manager-update.timer" <<'EOF'
+[Unit]
+Description=Check for Elden Ring Save Manager updates daily and at login
+
+[Timer]
+OnStartupSec=2min
+OnUnitActiveSec=1d
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable --now er-save-manager-update.timer
+    echo "Automatic updates on: checks 2 minutes after login and then daily, with a notification when it updates."
+}
+
+disable_auto() {
+    systemctl --user disable --now er-save-manager-update.timer 2>/dev/null || true
+    rm -f "$UNIT_DIR/er-save-manager-update.service" "$UNIT_DIR/er-save-manager-update.timer"
+    systemctl --user daemon-reload
+    echo "Automatic updates off."
+}
+
+write_desktop() {
+    mkdir -p "$(dirname "$DESKTOP")"
+    cat >"$DESKTOP" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Elden Ring Save Manager
+Comment=Manage, back up and fix Elden Ring saves (updates itself)
+Exec=env ERSM_NOTIFY=1 "$SELF" --launch
+Icon=applications-games
+Terminal=false
+Categories=Game;Utility;
+Actions=update;previous;
+
+[Desktop Action update]
+Name=Check for updates now
+Icon=system-software-update
+Exec=env ERSM_NOTIFY=1 ERSM_TELL_UPTODATE=1 "$SELF"
+
+[Desktop Action previous]
+Name=Open previous version
+Icon=edit-undo
+Exec="$DIR/ER-Save-Manager.previous.AppImage"
+EOF
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$(dirname "$DESKTOP")" 2>/dev/null || true
+}
+
+launch_app() {
+    if [ -x "$APP" ]; then
+        exec "$APP"
+    fi
+    say "The Save Manager isn't installed yet and couldn't be downloaded. Check the internet connection."
+    exit 1
+}
+
+MODE="update"
+case "${1:-}" in
+    --launch) MODE="launch" ;;
+    --check) MODE="check" ;;
+    --force) MODE="force" ;;
+    --enable-auto) enable_auto; exit 0 ;;
+    --disable-auto) disable_auto; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    "") ;;
+    *) echo "Unknown option: $1 (try --help)"; exit 1 ;;
+esac
+
+need curl python3 unzip
+
+# ---- ask GitHub for the latest release
+if [ "$MODE" = "launch" ]; then TIMEOUT=(--max-time 8); else TIMEOUT=(--retry 2); fi
+json="$(curl -fsSL "${TIMEOUT[@]}" -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/$REPO/releases/latest")" || {
+    [ "$MODE" = "launch" ] && launch_app
+    say "Couldn't reach GitHub to check for updates."; exit 1; }
+
+IFS=$'\t' read -r TAG URL NAME < <(printf '%s' "$json" | python3 -c '
+import json, sys
+r = json.load(sys.stdin)
+assets = r.get("assets", [])
+def pick():
+    for a in assets:                                   # a bare AppImage first
+        if a["name"].lower().endswith(".appimage"):
+            return a
+    for a in assets:                                   # otherwise the Linux zip
+        n = a["name"].lower()
+        if n.endswith(".zip") and ("linux" in n or "appimage" in n):
+            return a
+    return None
+a = pick()
+print(r.get("tag_name", "?"), a["browser_download_url"] if a else "-", a["name"] if a else "-", sep="\t")
+')
+
+if [ "$URL" = "-" ]; then
+    [ "$MODE" = "launch" ] && launch_app
+    say "The latest release ($TAG) has no Linux download yet. Try again later."; exit 1
+fi
+
+CURRENT="$(cat "$VERSION_FILE" 2>/dev/null || echo "none")"
+
+if [ "$MODE" = "check" ]; then
+    if [ "$CURRENT" = "$TAG" ]; then echo "Up to date ($TAG)."; else echo "Update available: $CURRENT -> $TAG"; fi
+    exit 0
+fi
+
+if [ "$MODE" != "force" ] && [ "$CURRENT" = "$TAG" ] && [ -x "$APP" ]; then
+    write_desktop
+    [ "$MODE" = "launch" ] && launch_app
+    if [ -n "${ERSM_TELL_UPTODATE:-}" ]; then say "Already up to date ($TAG)."; else echo "Already up to date ($TAG)."; fi
+    exit 0
+fi
+
+if pgrep -f "$APP" >/dev/null 2>&1; then
+    say "Version $TAG is out, but the Save Manager is open. Close it and run the update again."
+    exit 0
+fi
+
+# ---- download and unpack
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+[ "$MODE" = "launch" ] && say "Updating to $TAG before opening..."
+echo "Downloading $NAME ($TAG)..."
+if ! curl -fL --retry 2 --progress-bar -o "$tmp/$NAME" "$URL"; then
+    [ "$MODE" = "launch" ] && launch_app
+    say "The download failed. Try again later."; exit 1
+fi
+
+case "$NAME" in
+    *.zip|*.ZIP)
+        mkdir "$tmp/unpacked"
+        unzip -q "$tmp/$NAME" -d "$tmp/unpacked"
+        new="$(find "$tmp/unpacked" -type f -iname '*.AppImage' | head -n1)"
+        ;;
+    *) new="$tmp/$NAME" ;;
+esac
+if [ -z "${new:-}" ] || [ ! -f "$new" ]; then
+    [ "$MODE" = "launch" ] && launch_app
+    say "Couldn't find the AppImage inside $NAME."; exit 1
+fi
+
+# ---- install (keep the previous version as a backup)
+mkdir -p "$DIR"
+[ -f "$APP" ] && mv -f "$APP" "$DIR/ER-Save-Manager.previous.AppImage"
+install -m 755 "$new" "$APP"
+echo "$TAG" >"$VERSION_FILE"
+
+write_desktop
+
+if [ "$CURRENT" = "none" ]; then
+    say "Installed Elden Ring Save Manager $TAG. It's in your app menu."
+else
+    say "Updated Elden Ring Save Manager: $CURRENT -> $TAG."
+fi
+
+if ! command -v fusermount >/dev/null 2>&1; then
+    echo "Note: if it won't start with a FUSE error, run: sudo pacman -S fuse2"
+fi
+
+[ "$MODE" = "launch" ] && launch_app
+exit 0

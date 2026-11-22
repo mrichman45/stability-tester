@@ -19,6 +19,12 @@
 Laptops are recognised by their hardware. Which fixes belong to which laptop is set in
 [`machines.json`](machines.json). Edit it in your clone and the app picks the change up straight away.
 
+## Tools
+
+| Tool | What it does |
+|---|---|
+| [`tools/er-save-manager-update`](tools/er-save-manager-update) | Installs the Elden Ring Save Manager (Linux) and keeps it up to date; its app icon checks for updates on launch. See the Legion guide's Gaming section. |
+
 ## Install
 
 ```bash
