@@ -1,0 +1,46 @@
+#!/bin/bash
+# legion-report: read-only facts about the Legion guide's steps, for checking Checkup's results.
+# Changes nothing. Run:  bash ~/.local/src/stability-tester/tools/legion-report > ~/legion-report.txt
+# Your username and home folder are replaced with <you> in the output.
+R="$(cd "$(dirname "$0")/.." && pwd)"
+S="$R/steps/legion-i9/files"
+h() { echo; echo "=== $*"; }
+run() { echo "\$ $*"; bash -c "$*" 2>&1 | head -n 40; }
+{
+h "power profiles"
+run "systemctl is-enabled power-profiles-daemon; systemctl is-active power-profiles-daemon; pacman -Q power-profiles-daemon tuned tuned-ppd 2>&1; powerprofilesctl get"
+h "shell"
+run "getent passwd \$USER | cut -d: -f7; echo SHELL=\$SHELL; grep -rhs -A2 '^\[terminal\]\|^shell\|Command=' ~/.config/alacritty/*.toml ~/.local/share/konsole/*.profile 2>/dev/null | head"
+h "usb automount"
+run "cat ~/.config/kded_device_automounterrc"
+h "themes and konsole"
+run "pacman -Q cachyos-emerald-kde-theme-git cachyos-nord-kde-theme-git konsole; plasma-apply-lookandfeel --list 2>/dev/null | head -3; kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage"
+h "speakers awake"
+run "ls -la ~/.config/wireplumber/wireplumber.conf.d/; grep -rn suspend ~/.config/wireplumber/ 2>/dev/null"
+h "audio configs: your versions vs the guide's"
+for pair in "mic-noise/99-noise-cancel.conf:.config/pipewire/pipewire.conf.d/99-noise-cancel.conf" \
+            "dock-mic/98-dock-mic.conf:.config/pipewire/pipewire.conf.d/98-dock-mic.conf" \
+            "usb-headset-mic/51-usb-headset-analog-mic.conf:.config/wireplumber/wireplumber.conf.d/51-usb-headset-analog-mic.conf" \
+            "intel-run/intel-run:.local/bin/intel-run"; do
+  echo "--- ${pair%%:*}"; diff -u "$S/${pair%%:*}" "$HOME/${pair#*:}" | head -n 40
+done
+run "ls ~/.config/pipewire/pipewire.conf.d/ ~/.config/pipewire/pipewire-pulse.conf.d/ 2>&1"
+h "backups, printing, fonts"
+run "pacman -Q kup bup rsync cups cups-browsed print-manager system-config-printer avahi nss-mdns sane-airscan skanpage 2>&1 | grep -v '^error' ; pacman -Q 2>/dev/null | grep -iE 'ttf-ms|cndrv|libxml2-legacy'; fc-list | grep -ciE 'calibri|segoe'; systemctl is-enabled cups.socket cups-browsed avahi-daemon 2>&1"
+h "gaming"
+run "pacman -Q cachyos-gaming-meta cachyos-gaming-applications umu-launcher proton-ge-custom-bin protonup-qt 2>&1; ls ~/.steam/root/compatibilitytools.d ~/.local/share/Steam/compatibilitytools.d 2>&1; cat ~/.config/environment.d/*.conf 2>&1"
+h "convergence"
+run "ls ~/bin ~/Applications ~/Games/ConvergenceER 2>&1; find ~ -maxdepth 4 -iname '*convergence*' -not -path '*/.cache/*' 2>/dev/null | head"
+h "docker"
+run "pacman -Q docker docker-compose 2>&1; systemctl is-enabled docker; cat /etc/docker/daemon.json 2>&1; id -nG"
+h "winboat"
+run "pacman -Q winboat freerdp 2>&1; ls -l /usr/local/bin/winboat* /etc/sudoers.d/ /etc/pacman.d/hooks/ 2>&1"
+h "hibernation"
+run "swapon --show; grep -n resume /etc/default/limine; ls /etc/systemd/sleep.conf.d/ 2>&1"
+h "blu-ray"
+run "pacman -Q makemkv vlc-plugins-all jre17-openjdk 2>&1; ls /etc/modules-load.d/; ls ~/.config/environment.d/ 2>&1"
+h "rtx hdmi audio"
+run "ls -l /usr/local/bin/rtx-hdmi* /etc/udev/rules.d/ 2>&1"
+h "checkup's own view"
+run "checkup-cli setup 2>&1 | grep -E '✖|⚠'"
+} | sed -e "s|$HOME|~|g" -e "s|\b$USER\b|<you>|g"
