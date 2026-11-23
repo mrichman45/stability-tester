@@ -26,6 +26,7 @@ package() {
   install -m644 guides/*.md "$pkgdir/usr/share/checkup/guides/"
   install -Dm644 machines.json "$pkgdir/usr/share/checkup/machines.json"
   install -Dm755 tools/er-save-manager-update "$pkgdir/usr/share/checkup/tools/er-save-manager-update"
+  install -Dm755 tools/aur-patched "$pkgdir/usr/bin/aur-patched"
   install -d "$pkgdir/usr/share/checkup/tools/legion"
   cp -a tools/legion/. "$pkgdir/usr/share/checkup/tools/legion/"
   install -d "$pkgdir/usr/share/checkup/steps"

@@ -1,0 +1,69 @@
+#!/bin/bash
+# aur-patched — keep your fixes in AUR packages you build yourself, and update them.
+#
+#   aur-patched update PKG     fetch the AUR's latest build script, put your fixes back on top,
+#                              rebuild and install (for -git packages this also gets the newest code)
+#   aur-patched list           packages kept in ~/.local/src with fixes, and whether they're ignored
+#   aur-patched ignore PKG     stop paru -Syu from rebuilding PKG from the unfixed AUR script
+#
+# A package qualifies when ~/.local/src/PKG is its AUR clone (paru -G PKG) and you've edited files
+# there (usually PKGBUILD). Your edits are kept as the difference from the AUR's version, so when the
+# AUR changes something else, both apply. If they touch the same lines, nothing is changed and you're
+# told what clashed.
+set -euo pipefail
+SRC="${AUR_PATCHED_DIR:-$HOME/.local/src}"
+
+die() { echo "aur-patched: $*" >&2; exit 1; }
+
+is_clone() { [ -d "$SRC/$1/.git" ] && git -C "$SRC/$1" remote get-url origin 2>/dev/null | grep -q 'aur.archlinux.org'; }
+
+cmd_update() {
+  local pkg=$1 dir="$SRC/$1"
+  is_clone "$pkg" || die "$dir isn't an AUR clone. Make one with: cd $SRC; paru -G $pkg"
+  cd "$dir"
+  local stashed=no
+  if ! git diff --quiet; then
+    git stash push -q -m "aur-patched fixes" && stashed=yes
+  fi
+  git pull -q --ff-only || { [ $stashed = yes ] && git stash pop -q; die "couldn't update the AUR script (network?). Nothing changed."; }
+  if [ $stashed = yes ] && ! git stash pop -q; then
+    git checkout -q -- . ; git stash list | head -n1
+    die "the AUR's new script changes the same lines as your fixes. Your fixes are saved in 'git stash' in $dir; nothing was built."
+  fi
+  echo "Your fixes on top of the AUR's latest script:"
+  git --no-pager diff --stat
+  makepkg -si
+}
+
+cmd_list() {
+  local any=no
+  for d in "$SRC"/*/; do
+    local p; p=$(basename "$d")
+    is_clone "$p" || continue
+    git -C "$d" diff --quiet && continue
+    any=yes
+    local ign=""; grep -qE "^IgnorePkg\s*=.*\b$p\b" /etc/pacman.conf && ign=" (paru -Syu skips it)"
+    echo "$p$ign"; git -C "$d" --no-pager diff --stat | sed 's/^/   /'
+  done
+  [ $any = yes ] || echo "No AUR packages with your own fixes in $SRC."
+}
+
+cmd_ignore() {
+  local pkg=$1
+  grep -qE "^IgnorePkg\s*=.*\b$pkg\b" /etc/pacman.conf && { echo "$pkg is already skipped by system updates."; return; }
+  if grep -qE '^IgnorePkg\s*=' /etc/pacman.conf; then
+    sudo sed -i -E "s/^(IgnorePkg\s*=.*)$/\1 $pkg/" /etc/pacman.conf
+  elif grep -qE '^#IgnorePkg' /etc/pacman.conf; then
+    sudo sed -i -E "0,/^#IgnorePkg.*/s//IgnorePkg = $pkg/" /etc/pacman.conf
+  else
+    sudo sed -i "/^\[options\]/a IgnorePkg = $pkg" /etc/pacman.conf
+  fi
+  echo "System updates now skip $pkg. Update it with: aur-patched update $pkg"
+}
+
+case "${1:-}" in
+  update) [ -n "${2:-}" ] || die "which package? e.g. aur-patched update whatauri-git"; cmd_update "$2" ;;
+  list)   cmd_list ;;
+  ignore) [ -n "${2:-}" ] || die "which package?"; cmd_ignore "$2" ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
