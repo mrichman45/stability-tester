@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .discover import merged_extras
-from .util import read
+from .util import read, repo_dir
 
 PACKAGED = Path("/usr/share/checkup/machines.json")
 REPO = Path(__file__).resolve().parent.parent / "machines.json"
@@ -27,8 +27,8 @@ class Machine:
 
 
 def profiles():
-    """All laptop profiles. The copy in the repo clone (~/stability-tester) wins, so edits there apply."""
-    for path in (Path.home() / "stability-tester/machines.json", REPO, PACKAGED):
+    """All laptop profiles. The copy in the repo clone wins, so edits there apply."""
+    for path in (repo_dir() / "machines.json", REPO, PACKAGED):
         if path.exists():
             data = json.loads(path.read_text())
             return {k: v for k, v in data.items() if not k.startswith("_")}

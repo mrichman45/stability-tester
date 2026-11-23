@@ -25,8 +25,8 @@ Checkup found gets fixed, it adds an entry to the [Fix log](#fix-log) at the bot
 2. Install Checkup:
    ```bash
    sudo pacman -S --needed git base-devel
-   git clone https://github.com/mrichman45/stability-tester ~/stability-tester
-   cd ~/stability-tester && makepkg -si
+   git clone https://github.com/mrichman45/stability-tester ~/.local/src/stability-tester
+   cd ~/.local/src/stability-tester && makepkg -si
    ```
 3. Open **Checkup** from the app menu, go to **My Setup**, and press **Set up this laptop**.
    It recognises the laptop by its hardware, asks for your password once, applies every fix in this

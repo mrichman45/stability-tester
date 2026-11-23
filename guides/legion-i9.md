@@ -25,8 +25,8 @@ Checkup found gets fixed, it adds an entry to the [Fix log](#fix-log) at the bot
 2. Install Checkup:
    ```bash
    sudo pacman -S --needed git base-devel
-   git clone https://github.com/mrichman45/stability-tester ~/stability-tester
-   cd ~/stability-tester && makepkg -si
+   git clone https://github.com/mrichman45/stability-tester ~/.local/src/stability-tester
+   cd ~/.local/src/stability-tester && makepkg -si
    ```
 3. Open **Checkup** from the app menu, go to **My Setup**, and press **Set up this laptop**.
    It recognises the laptop by its hardware, asks for your password once, applies every fix in this
@@ -174,7 +174,7 @@ restored at login and when the camera switch is turned back on, as long as the s
 ```bash
 systemctl --user enable --now webcam-settings.service
 ```
-If the page disappears after a big KDE update, run `makepkg -sif` in the kcm-webcam folder.
+If the page disappears after a big KDE update, run `makepkg -sif` in `~/.local/src/kcm-webcam` (Checkup downloads it again if it is missing).
 
 ---
 
@@ -208,13 +208,15 @@ Before buying, check the game on [ProtonDB](https://www.protondb.com) and the
 `tools/er-save-manager-update` in this repo installs the Linux version of the Elden Ring Save Manager
 (Hapfel1/er-save-manager) and keeps it up to date:
 ```bash
-install -Dm755 ~/stability-tester/tools/er-save-manager-update ~/.local/bin/er-save-manager-update
+install -Dm755 ~/.local/src/stability-tester/tools/er-save-manager-update ~/.local/bin/er-save-manager-update
 er-save-manager-update
 ```
 - Clicking its icon checks for an update first (8 seconds at most), then opens the app.
 - Right-click the icon: **Check for updates now**, or **Open previous version** if an update misbehaves.
 - `er-save-manager-update --enable-auto` also checks daily. Settings and save backups are never touched.
 - FUSE error when it starts: `sudo pacman -S fuse2`.
+- The app itself lives in `~/.local/share/er-save-manager` (an older `~/Applications/er-save-manager` is moved there
+  automatically the next time the updater runs).
 - Checkup's **Elden Ring Save Manager updates itself** check installs the updater (and the Save Manager) after a
   reinstall, and keeps the updater script in step with this repo.
 

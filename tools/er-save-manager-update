@@ -15,7 +15,8 @@
 set -euo pipefail
 
 REPO="${ERSM_REPO:-Hapfel1/er-save-manager}"
-DIR="${ERSM_DIR:-$HOME/Applications/er-save-manager}"
+DIR="${ERSM_DIR:-$HOME/.local/share/er-save-manager}"
+OLD_DIR="$HOME/Applications/er-save-manager"
 APP="$DIR/ER-Save-Manager.AppImage"
 VERSION_FILE="$DIR/VERSION"
 DESKTOP="$HOME/.local/share/applications/er-save-manager.desktop"
@@ -117,6 +118,15 @@ case "${1:-}" in
     "") ;;
     *) echo "Unknown option: $1 (try --help)"; exit 1 ;;
 esac
+
+# Move an install from the old location (~/Applications) to the new one, once.
+if [ -z "${ERSM_DIR:-}" ] && [ -d "$OLD_DIR" ] && [ ! -e "$DIR" ]; then
+    mkdir -p "$(dirname "$DIR")"
+    mv "$OLD_DIR" "$DIR"
+    rmdir "$HOME/Applications" 2>/dev/null || true
+    write_desktop
+    echo "Moved the Save Manager to $DIR."
+fi
 
 need curl python3 unzip
 

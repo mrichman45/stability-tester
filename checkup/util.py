@@ -13,6 +13,18 @@ USER = pwd.getpwuid(os.getuid()).pw_name
 UID = os.getuid()
 GID = os.getgid()
 
+SRC_DIR = HOME / ".local/src"            # where source folders live (hidden, out of the way)
+DATA_DIR = HOME / ".local/share"
+
+
+def repo_dir():
+    """The stability-tester clone: ~/.local/src/stability-tester, or the old ~/stability-tester."""
+    for d in (SRC_DIR / "stability-tester", HOME / "stability-tester"):
+        if (d / ".git").exists():
+            return d
+    return SRC_DIR / "stability-tester"
+
+
 HELPER_INSTALLED = Path("/usr/lib/checkup/checkup-root")
 HELPER_DEV = Path(__file__).resolve().parent.parent / "checkup-root"
 

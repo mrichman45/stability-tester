@@ -6,14 +6,13 @@ import shutil
 import time
 from pathlib import Path
 
-from .util import HOME, shell_quote
+from .util import HOME, repo_dir, shell_quote
 
 CONFIG_FILE = HOME / ".config/checkup/config.json"
 STATE_FILE = HOME / ".local/state/checkup/state.json"
 MARKER = "<!-- checkup:fix-log -->"
 PACKAGED_DIR = Path("/usr/share/checkup")
 REPO_DIR = Path(__file__).resolve().parent.parent
-CLONE_DIR = HOME / "stability-tester"
 
 # Results that change by themselves (Wi-Fi, camera switch, reboots) aren't "fixes".
 NOT_LOGGED = {"dns", "camera", "reboot"}
@@ -44,13 +43,14 @@ def save_config(cfg):
 
 
 def guide_path(cfg, machine):
-    """This laptop's guide: your setting, else the GitHub clone (~/stability-tester), else a local copy."""
+    """This laptop's guide: your setting, else the GitHub clone (~/.local/src/stability-tester), else a local copy."""
     rel = getattr(machine, "guide", "") or "guides/README.md"
     custom = (cfg.get("guide_paths") or {}).get(machine.id)
     if custom and Path(custom).exists():
         return Path(custom)
-    if (CLONE_DIR / rel).exists() and (CLONE_DIR / ".git").exists():
-        return CLONE_DIR / rel
+    clone = repo_dir()
+    if (clone / rel).exists() and (clone / ".git").exists():
+        return clone / rel
     local = HOME / ".local/share/checkup" / rel
     if not local.exists():
         local.parent.mkdir(parents=True, exist_ok=True)

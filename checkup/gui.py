@@ -777,7 +777,7 @@ class GuideTab(QWidget):
         if not lines:
             QMessageBox.information(self, "Not a git repository",
                                     "This guide isn't inside a git clone, so it can't be synced. Clone the "
-                                    "stability-tester repo to ~/stability-tester and Checkup will use its guides.")
+                                    "stability-tester repo to ~/.local/src/stability-tester and Checkup will use its guides.")
             return
         plan = runner.Plan(items=[], script=lines)
         dlg = RunDialog(self, plan, "Syncing the guides with GitHub")

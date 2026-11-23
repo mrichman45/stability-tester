@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import fixers
-from .util import (GID, HOME, UID, USER, kread, kwrite_cmd, pkg_required_by, pkg_version,
+from .util import (DATA_DIR, GID, HOME, SRC_DIR, UID, USER, kread, repo_dir, kwrite_cmd, pkg_required_by, pkg_version,
                    read, repo_versions, run, shell_quote, unit_state, upstream,
                    groups_configured, groups_in_session, login_shell, which)
 
@@ -216,7 +216,7 @@ ERSM_TARGET = HOME / ".local/bin/er-save-manager-update"
 
 
 def _ersm_source():
-    for base in (HOME / "stability-tester", Path("/usr/share/checkup"), Path(__file__).resolve().parent.parent):
+    for base in (repo_dir(), Path("/usr/share/checkup"), Path(__file__).resolve().parent.parent):
         if (base / ERSM_TOOL).exists():
             return base / ERSM_TOOL
     return None
@@ -227,10 +227,10 @@ def c_er_save_manager(ctx):
         return None
     src = _ersm_source()
     installed = ERSM_TARGET.exists()
-    app = HOME / "Applications/er-save-manager/ER-Save-Manager.AppImage"
+    app = DATA_DIR / "er-save-manager/ER-Save-Manager.AppImage"   # running the updater moves an old ~/Applications copy here
     desktop = HOME / ".local/share/applications/er-save-manager.desktop"
     if not src:
-        return Result(SKIP, "The updater script isn't available (update the stability-tester repo or Checkup).")
+        return Result(SKIP, "The updater script isn't available (update ~/.local/src/stability-tester or Checkup).")
     current = installed and read(ERSM_TARGET) == read(src)
     script = []
     if not current:
@@ -458,8 +458,9 @@ def c_webcam_page(ctx):
     return Result(FAIL, "The Webcam settings page isn't installed.", Fix(
         "Installed the Webcam settings page from GitHub",
         ["sudo pacman -S --needed git base-devel",
-         "if [ -d ~/kcm-webcam/.git ]; then git -C ~/kcm-webcam pull; else git clone https://github.com/mrichman45/kcm-webcam ~/kcm-webcam; fi",
-         "@build ~/kcm-webcam",
+         "mkdir -p ~/.local/src && if [ -d ~/kcm-webcam/.git ] && [ ! -e ~/.local/src/kcm-webcam ]; then mv ~/kcm-webcam ~/.local/src/; fi",
+         "if [ -d ~/.local/src/kcm-webcam/.git ]; then git -C ~/.local/src/kcm-webcam pull; else git clone https://github.com/mrichman45/kcm-webcam ~/.local/src/kcm-webcam; fi",
+         "@build ~/.local/src/kcm-webcam",
          "systemctl --user daemon-reload",
          "systemctl --user enable --now webcam-settings.service"]))
 

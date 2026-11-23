@@ -19,6 +19,11 @@
 Laptops are recognised by their hardware. Which fixes belong to which laptop is set in
 [`machines.json`](machines.json). Edit it in your clone and the app picks the change up straight away.
 
+## Where things live
+
+Source folders go in the hidden `~/.local/src/` (this repo, `kcm-webcam`, `kwin-integration`, `kando-bin`),
+and app data in `~/.local/share/` (for example `er-save-manager`), so the home folder stays tidy.
+
 ## Tools
 
 | Tool | What it does |
@@ -29,15 +34,16 @@ Laptops are recognised by their hardware. Which fixes belong to which laptop is 
 
 ```bash
 sudo pacman -S --needed git base-devel
-git clone https://github.com/mrichman45/stability-tester ~/stability-tester
-cd ~/stability-tester
+git clone https://github.com/mrichman45/stability-tester ~/.local/src/stability-tester
+cd ~/.local/src/stability-tester
 makepkg -si
 ```
 
-Then open **Checkup** from the app menu. Keep the clone in `~/stability-tester`: the app reads the
+Then open **Checkup** from the app menu. Keep the clone in `~/.local/src/stability-tester` (a hidden folder, so it
+stays out of the way; an older clone in `~/stability-tester` still works): the app reads the
 guides and profiles from there, so the fix logs can be synced back to GitHub.
 
-To update the app later: `cd ~/stability-tester && git pull && makepkg -sif`.
+To update the app later: `cd ~/.local/src/stability-tester && git pull && makepkg -sif`.
 
 ## Terminal version
 

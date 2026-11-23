@@ -12,11 +12,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .util import HOME, USER, groups_configured, login_shell, read, run, which
+from .util import HOME, USER, groups_configured, login_shell, read, repo_dir, run, which
 
 EXTRA_KEYS = ("packages", "aur", "flatpaks", "remove", "services", "user_services", "groups", "shell", "notes")
 LOCAL_EXTRAS = HOME / ".config/checkup/extras.json"
-CLONE_PROFILES = HOME / "stability-tester/machines.json"
+
+
+def clone_profiles():
+    return repo_dir() / "machines.json"
 
 # Installed by Checkup itself, by the guide's own checks, or managed by CachyOS tools.
 KNOWN_PACKAGES = {
@@ -182,6 +185,7 @@ def save_findings(machine, findings):
     otherwise in ~/.config/checkup/extras.json. Returns where it was saved."""
     if not findings:
         return None
+    CLONE_PROFILES = clone_profiles()
     target_clone = CLONE_PROFILES.exists() and (CLONE_PROFILES.parent / ".git").exists() and machine.id != "unknown"
     if target_clone:
         data = json.loads(CLONE_PROFILES.read_text())
@@ -214,7 +218,7 @@ def save_findings(machine, findings):
 
 def remove_items(machine, ids):
     """Take items out of the profile (used by Review). ids like 'packages:foo'."""
-    for path, nested in ((CLONE_PROFILES, True), (LOCAL_EXTRAS, False)):
+    for path, nested in ((clone_profiles(), True), (LOCAL_EXTRAS, False)):
         try:
             data = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
