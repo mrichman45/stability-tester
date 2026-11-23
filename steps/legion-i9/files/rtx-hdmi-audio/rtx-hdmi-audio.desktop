@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RTX HDMI Audio
+Comment=Sound through an external monitor on or off (off lets the RTX power down)
+Exec=/usr/local/bin/rtx-hdmi-audio-button
+Icon=audio-card
+Terminal=false
+Categories=Utility;

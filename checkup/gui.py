@@ -180,7 +180,7 @@ class ChooseFixesDialog(QDialog):
         for c, r in todo:
             item = QListWidgetItem(f"{c.title} — {r.fix.summary}")
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
+            item.setCheckState(Qt.Unchecked if getattr(c, "optional", False) else Qt.Checked)
             item.setToolTip(r.detail + ("\n\n" + "\n".join("$ " + l for l in r.fix.script) if r.fix.script else ""))
             self.list.addItem(item)
         lay.addWidget(self.list)

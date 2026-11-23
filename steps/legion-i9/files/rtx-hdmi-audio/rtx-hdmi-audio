@@ -1,0 +1,27 @@
+#!/bin/sh
+# rtx-hdmi-audio: the RTX's HDMI/DisplayPort audio on (sound through a monitor) or off (lets the RTX power down)
+# Usage: rtx-hdmi-audio on | off | toggle | status
+# The udev rule /etc/udev/rules.d/62-rtx-no-hdmi-audio.rules removes the device at boot unless $FLAG exists.
+FLAG=/etc/rtx-hdmi-audio
+GPU=/sys/bus/pci/devices/0000:01:00.0
+AUD=/sys/bus/pci/devices/0000:01:00.1
+case "${1:-status}" in
+  on)
+    touch "$FLAG"
+    echo on > "$GPU/power/control" 2>/dev/null; sleep 1      # wake the RTX so the rescan can see its audio part
+    echo 1 > /sys/bus/pci/rescan; sleep 1
+    echo auto > "$GPU/power/control" 2>/dev/null
+    if [ -e "$AUD" ]; then echo "HDMI audio on. The RTX stays awake until you switch it off."
+    else echo "Couldn't bring HDMI audio back."; exit 1; fi ;;
+  off)
+    rm -f "$FLAG"
+    [ -e "$AUD/remove" ] && echo 1 > "$AUD/remove"
+    echo "HDMI audio off. The RTX can power down." ;;
+  toggle)
+    if [ -e "$FLAG" ]; then exec "$0" off; else exec "$0" on; fi ;;
+  status)
+    if [ -e "$FLAG" ]; then a=on; else a=off; fi
+    echo "HDMI audio: $a. RTX: $(cat "$GPU/power/runtime_status" 2>/dev/null || echo missing)." ;;
+  *)
+    echo "Usage: rtx-hdmi-audio on | off | toggle | status"; exit 1 ;;
+esac

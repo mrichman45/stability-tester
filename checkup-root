@@ -8,6 +8,8 @@ ending each answer with a line "\\x1eEND <exit code>".
 Requests:
   {"action": "setup-info"}                         Secure Boot status, sbctl verify, NTFS kernel messages (JSON)
   {"action": "stability", "args": [...]}            --ram MB --smart 0|1 --since EPOCH (RAM test, SMART, kernel errors)
+  {"action": "probe", "scripts": {id: {"script": "...", "env": {...}}}}
+                                                   read-only tests for guide steps; answers {id: [rc, last line]}
   {"action": "run-plan", "steps": [...]}           fixes you confirmed in Checkup, in order:
       {"kind": "root",  "cmd": "..."}   run as root
       {"kind": "user",  "cmd": "..."}   run as you (with your desktop session's environment)
@@ -200,6 +202,23 @@ def aur(user, pkg):
     return rc if rc != 0 else build(user, d)
 
 
+def probe(scripts):
+    """Run each guide step's test as root (they only read) and answer with JSON."""
+    answers = {}
+    for sid, d in scripts.items():
+        env = {"PATH": STD_PATH, "LC_ALL": "C.UTF-8", "HOME": "/root"}
+        env.update({k: str(v) for k, v in (d.get("env") or {}).items()})
+        try:
+            p = subprocess.run(["bash", "-c", d["script"]], capture_output=True, text=True, env=env,
+                               timeout=60, stdin=subprocess.DEVNULL, cwd="/")
+            last = (p.stdout.strip().splitlines() or [""])[-1]
+            answers[sid] = [p.returncode, last[:300]]
+        except subprocess.TimeoutExpired:
+            answers[sid] = [1, "The test took too long."]
+    say(json.dumps(answers))
+    return 0
+
+
 def run_plan(steps, uid):
     user = User(uid)
     for n, step in enumerate(steps, 1):
@@ -241,6 +260,8 @@ def serve():
                 rc = setup_info()
             elif action == "stability":
                 rc = stability([str(a) for a in req.get("args", [])])
+            elif action == "probe":
+                rc = probe(req.get("scripts", {}))
             elif action == "run-plan":
                 rc = run_plan(req.get("steps", []), int(uid))
             elif action == "ping":

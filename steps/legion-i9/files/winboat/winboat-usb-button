@@ -1,0 +1,11 @@
+#!/bin/bash
+args=()
+while read -r line; do
+  id=$(grep -oE '[0-9a-f]{4}:[0-9a-f]{4}' <<<"$line" | head -n1)
+  [ -n "$id" ] || continue
+  args+=("$id" "$(sed -E 's/.*ID [0-9a-f]{4}:[0-9a-f]{4} //' <<<"$line")")
+done < <(sudo -n /usr/local/bin/winboat-usb list)
+[ ${#args[@]} -gt 0 ] || { kdialog --error "No USB devices found."; exit 1; }
+choice=$(kdialog --title "WinBoat USB" --menu "Move which device?" "${args[@]}") || exit 0
+msg=$(sudo -n /usr/local/bin/winboat-usb toggle "$choice" 2>&1)
+notify-send -a "WinBoat USB" -i drive-removable-media "WinBoat USB" "$msg"

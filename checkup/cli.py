@@ -86,7 +86,10 @@ def cmd_setup(args, cfg):
             if input("Fix this? [y/N] ").strip().lower() == "y":
                 chosen.append((c, r))
     else:
-        chosen = todo
+        chosen = [(c, r) for c, r in todo if not c.optional or getattr(args, "optional", False)]
+        skipped = len(todo) - len(chosen)
+        if skipped:
+            print(f"\n{skipped} optional step(s) left out; add --optional to include them.")
     if not chosen:
         return 1
 
@@ -244,6 +247,7 @@ def main(argv=None):
     s.add_argument("--yes", action="store_true")
     a = sub.add_parser("apply", help="set up this laptop: apply every fix from the guide in one go")
     a.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    a.add_argument("--optional", action="store_true", help="also do the optional guide steps")
     st = sub.add_parser("stability", help="stress-test CPU, GPU, RAM and disks")
     st.add_argument("--quick", action="store_true")
     st.add_argument("--cpu-minutes", type=int)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=WinBoat USB
+Comment=Move a USB device between Linux and WinBoat's Windows
+Exec=/usr/local/bin/winboat-usb-button
+Icon=drive-removable-media
+Terminal=false
+Categories=Utility;

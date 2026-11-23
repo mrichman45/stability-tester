@@ -1,0 +1,275 @@
+#!/bin/bash
+# legion-integrity — check that this system is intact, not merely running.
+#
+#   sudo legion-integrity            quick pass, a minute or two
+#   sudo legion-integrity --full     adds package checksums and a Btrfs scrub
+#   sudo legion-integrity --scrub-status   just report on a scrub already running
+#
+# Quick covers: failed services, Secure Boot signatures, boot files, package
+# file presence, drive health, filesystem errors, .pacnew files, snapshots.
+# Full adds: every installed file checksummed against its package, and a full
+# read-and-verify pass over the Btrfs filesystem.
+#
+# Nothing here changes anything except starting a scrub, which is a read-only
+# verification pass and safe to run on a mounted filesystem.
+
+set -uo pipefail
+
+MODE="${1:-}"
+FAILURES=0
+WARNINGS=0
+
+c_red=$'\e[31m'; c_yel=$'\e[33m'; c_grn=$'\e[32m'; c_dim=$'\e[2m'; c_off=$'\e[0m'
+[ -t 1 ] || { c_red=""; c_yel=""; c_grn=""; c_dim=""; c_off=""; }
+
+section() { printf '\n%s== %s%s\n' "$c_dim" "$1" "$c_off"; }
+ok()      { printf '  %sok%s      %s\n' "$c_grn" "$c_off" "$1"; }
+warn()    { printf '  %swarn%s    %s\n' "$c_yel" "$c_off" "$1"; WARNINGS=$((WARNINGS+1)); }
+fail()    { printf '  %sPROBLEM%s %s\n' "$c_red" "$c_off" "$1"; FAILURES=$((FAILURES+1)); }
+note()    { printf '          %s\n' "$1"; }
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run this with sudo: some checks need to read /boot and the raw drives." >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------- scrub only
+
+if [ "$MODE" = "--scrub-status" ]; then
+    for mp in / /home; do
+        findmnt -no FSTYPE "$mp" 2>/dev/null | grep -q btrfs || continue
+        echo "== $mp"
+        btrfs scrub status "$mp"
+    done
+    exit 0
+fi
+
+echo "Integrity check — $(date '+%Y-%m-%d %H:%M')  on $(uname -n), kernel $(uname -r)"
+
+# ------------------------------------------------------------------ services
+
+section "systemd"
+failed=$(systemctl --failed --no-legend --plain 2>/dev/null | wc -l)
+if [ "$failed" -eq 0 ]; then
+    ok "no failed system units"
+else
+    fail "$failed failed system unit(s)"
+    systemctl --failed --no-legend --plain | sed 's/^/          /'
+fi
+
+# The desktop user's own units matter too; find who is actually logged in.
+desktop_user=$(loginctl list-sessions --no-legend 2>/dev/null | awk '$3!="" && $3!="root" {print $3; exit}')
+if [ -n "${desktop_user:-}" ]; then
+    ufailed=$(systemctl --user -M "${desktop_user}@.host" --failed --no-legend --plain 2>/dev/null | wc -l)
+    if [ "$ufailed" -eq 0 ]; then
+        ok "no failed user units for $desktop_user"
+    else
+        warn "$ufailed failed user unit(s) for $desktop_user"
+        systemctl --user -M "${desktop_user}@.host" --failed --no-legend --plain 2>/dev/null | sed 's/^/          /'
+    fi
+fi
+
+# -------------------------------------------------------------- secure boot
+
+section "Secure Boot and boot files"
+if command -v sbctl >/dev/null; then
+    sbctl verify >/tmp/.sbctl.$$ 2>&1 || true
+    # Files belonging to Windows are signed by Microsoft, not by our key, and
+    # sbctl reports them as unsigned. That is expected on a dual-boot machine
+    # where Microsoft's keys were kept, so they are counted separately rather
+    # than raised as faults.
+    ours=$(grep -i 'not signed' /tmp/.sbctl.$$ \
+           | grep -viE '/EFI/Microsoft/|/EFI/BOOT/BOOTX64\.EFI|/EFI/Boot/bootx64\.efi' || true)
+    theirs=$(grep -ci '/EFI/Microsoft/' /tmp/.sbctl.$$ || true)
+    n_ours=$(printf '%s' "$ours" | grep -c . || true)
+
+    if [ "${n_ours:-0}" -eq 0 ]; then
+        ok "every file we are responsible for signing is signed"
+    else
+        fail "$n_ours file(s) we sign are unsigned — this machine may not boot with Secure Boot on"
+        printf '%s\n' "$ours" | sed 's/^/          /'
+        note "fix with: sudo sbctl sign-all && sudo limine-update"
+    fi
+    [ "${theirs:-0}" -gt 0 ] && \
+        note "${theirs} Windows boot file(s) are signed by Microsoft, not by us — expected"
+    rm -f /tmp/.sbctl.$$
+    sb_state=$(bootctl status 2>/dev/null | awk -F': *' '/Secure Boot/ {print $2; exit}')
+    note "firmware reports Secure Boot: ${sb_state:-unknown}"
+else
+    note "sbctl not installed; skipping signature check"
+fi
+
+esp=$(findmnt -no TARGET /boot 2>/dev/null)
+if [ -n "$esp" ]; then
+    if [ -s /boot/limine.conf ] || [ -s /boot/EFI/BOOT/BOOTX64.EFI ] || [ -d /boot/EFI ]; then
+        ok "the EFI partition is mounted and not empty"
+    else
+        fail "/boot looks empty — this machine may not start"
+    fi
+    used=$(df -h /boot --output=pcent 2>/dev/null | tail -1 | tr -d ' %')
+    [ "${used:-0}" -gt 85 ] && warn "/boot is ${used}% full; kernel updates may fail"
+else
+    fail "/boot is not mounted"
+fi
+
+# Kernels live in different places depending on the bootloader: directly in
+# /boot, under /boot/EFI/<distro>/, or inside a unified kernel image. Search
+# the whole ESP for any of those rather than assuming a layout.
+kernels=$(find /boot \( -name 'vmlinuz*' -o -name 'linux*.efi' -o -name '*.UKI.efi' \) 2>/dev/null | wc -l)
+if [ "$kernels" -gt 0 ]; then
+    ok "$kernels kernel image(s) found under /boot"
+elif find /boot -name '*.efi' 2>/dev/null | grep -qiE 'limine|systemd|grub'; then
+    warn "no kernel image under /boot, but a bootloader is there"
+    note "some setups keep kernels on the root filesystem; check /boot and your bootloader config"
+else
+    fail "no kernel image and no bootloader found under /boot"
+fi
+
+# ------------------------------------------------------------------ packages
+
+section "installed files versus their packages"
+if [ "$MODE" = "--full" ]; then
+    note "checksumming every installed file; this takes several minutes"
+    out=$(pacman -Qkk 2>&1 | grep -vE '^$' || true)
+else
+    note "checking files exist and have the right size (use --full to checksum)"
+    out=$(pacman -Qk 2>&1 | grep -vE '^$' || true)
+fi
+# pacman -Qk prints a summary line for EVERY package, including the healthy
+# ones ("pkg: 17 total files, 0 missing files"). Only lines reporting a
+# non-zero count are faults. Config files the user has edited are expected to
+# differ and are counted separately.
+bad=$(printf '%s\n' "$out" \
+      | grep -vi 'backup file' \
+      | grep -viE ', 0 missing files' \
+      | grep -iE 'missing|altered|modified|size mismatch|checksum|permission|symlink' || true)
+altered=$(printf '%s' "$bad" | grep -c . || true)
+backups=$(printf '%s\n' "$out" | grep -ci 'backup file' || true)
+
+if [ "${altered:-0}" -eq 0 ]; then
+    ok "no unexpected differences in packaged files"
+else
+    fail "${altered} packaged file(s) missing or altered"
+    printf '%s\n' "$bad" | head -40 | sed 's/^/          /'
+    [ "$altered" -gt 40 ] && note "(showing the first 40)"
+    note "reinstall an affected package with: sudo pacman -S <name>"
+fi
+[ "${backups:-0}" -gt 0 ] && note "${backups} config file(s) differ from their package, which is normal"
+
+foreign=$(pacman -Qm 2>/dev/null | wc -l)
+[ "$foreign" -gt 0 ] && note "$foreign package(s) not from a repository (AUR or local):" \
+                     && pacman -Qm | sed 's/^/          /'
+
+# ------------------------------------------------------------------ pacnew
+
+section "config files left behind by updates"
+pacnew=$(find /etc /boot -name '*.pacnew' -o -name '*.pacsave' 2>/dev/null)
+if [ -z "$pacnew" ]; then
+    ok "no .pacnew or .pacsave files"
+else
+    warn "$(echo "$pacnew" | wc -l) config file(s) need review"
+    echo "$pacnew" | sed 's/^/          /'
+    note "compare with: sudo diff /etc/<file> /etc/<file>.pacnew"
+fi
+
+# -------------------------------------------------------------------- drives
+
+section "drive health"
+for dev in /dev/nvme?n? /dev/sd?; do
+    [ -b "$dev" ] || continue
+    command -v smartctl >/dev/null || { note "smartmontools not installed"; break; }
+    health=$(smartctl -H "$dev" 2>/dev/null | grep -iE 'result|health' | head -1)
+    model=$(smartctl -i "$dev" 2>/dev/null | awk -F': *' '/Model Number|Device Model/ {print $2; exit}')
+    if echo "$health" | grep -qiE 'passed|ok'; then
+        ok "$dev ${model:-} — $(echo "$health" | sed 's/.*: *//')"
+    elif [ -n "$health" ]; then
+        fail "$dev ${model:-} — $health"
+    else
+        note "$dev — no SMART data (an enclosure may not pass it through)"
+        continue
+    fi
+    # NVMe wear and error indicators worth seeing even when health says PASSED.
+    if [[ "$dev" == /dev/nvme* ]]; then
+        smartctl -A "$dev" 2>/dev/null | awk -F': *' '
+            /Percentage Used/        {printf "          wear: %s\n", $2}
+            /Media and Data Integrity Errors/ {printf "          media errors: %s\n", $2}
+            /Unsafe Shutdowns/       {printf "          unsafe shutdowns: %s\n", $2}
+            /Available Spare:/       {printf "          spare: %s\n", $2}'
+    fi
+done
+
+# ---------------------------------------------------------------- filesystem
+
+section "filesystems"
+# One Btrfs filesystem is usually mounted many times, once per subvolume.
+# Report it once, by its device, rather than eight identical lines.
+for mp in $(findmnt -rno TARGET,FSTYPE,SOURCE | awk '$2=="btrfs" {
+                split($3, d, "["); if (!(d[1] in seen)) { seen[d[1]]=1; print $1 } }'); do
+    errs=$(btrfs device stats "$mp" 2>/dev/null | grep -v ' 0$' || true)
+    if [ -z "$errs" ]; then
+        ok "btrfs $mp — no recorded device errors"
+    else
+        fail "btrfs $mp has recorded errors"
+        echo "$errs" | sed 's/^/          /'
+    fi
+    usage=$(btrfs filesystem usage -g "$mp" 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')
+    [ -n "${usage:-}" ] && note "$mp free: $usage"
+done
+
+dmesg_errs=$(dmesg --level=err,crit,alert,emerg 2>/dev/null \
+    | grep -iE 'ext4|btrfs|nvme|i/o error|corrupt|bad block' | tail -10 || true)
+if [ -z "$dmesg_errs" ]; then
+    ok "no filesystem or disk errors in this boot's kernel log"
+else
+    fail "disk or filesystem errors in the kernel log:"
+    echo "$dmesg_errs" | sed 's/^/          /'
+fi
+
+# ----------------------------------------------------------------- snapshots
+
+section "restore points"
+if command -v snapper >/dev/null; then
+    # snapper draws a separator row under the header; skip anything that is
+    # not a plausible config name.
+    for cfg in $(snapper list-configs --columns config 2>/dev/null \
+                 | tail -n +2 | grep -E '^[A-Za-z0-9_.-]+$'); do
+        n=$(snapper -c "$cfg" list --columns number 2>/dev/null | tail -n +3 | wc -l)
+        if [ "$n" -gt 0 ]; then
+            ok "$cfg: $n snapshot(s), newest $(snapper -c "$cfg" list --columns date 2>/dev/null | tail -1)"
+        else
+            warn "$cfg: no snapshots — an update could not be undone"
+        fi
+    done
+else
+    note "snapper not installed"
+fi
+
+# --------------------------------------------------------------- full extras
+
+if [ "$MODE" = "--full" ]; then
+    section "btrfs scrub (reads and verifies every block)"
+    for mp in $(findmnt -rno TARGET,FSTYPE | awk '$2=="btrfs" {print $1}' | sort -u | head -1); do
+        if btrfs scrub status "$mp" 2>/dev/null | grep -q 'running'; then
+            note "a scrub is already running on $mp"
+        else
+            btrfs scrub start "$mp" >/dev/null 2>&1 \
+                && note "started on $mp; it runs in the background" \
+                || warn "could not start a scrub on $mp"
+        fi
+    done
+    note "check later with: sudo legion-integrity --scrub-status"
+fi
+
+# ------------------------------------------------------------------ verdict
+
+section "result"
+if [ "$FAILURES" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+    printf '  %sEverything checked came back clean.%s\n' "$c_grn" "$c_off"
+elif [ "$FAILURES" -eq 0 ]; then
+    printf '  %s%d warning(s), nothing broken.%s\n' "$c_yel" "$WARNINGS" "$c_off"
+else
+    printf '  %s%d problem(s) and %d warning(s). Read the PROBLEM lines above.%s\n' \
+        "$c_red" "$FAILURES" "$WARNINGS" "$c_off"
+fi
+[ "$MODE" != "--full" ] && note "this was the quick pass; --full checksums every file and scrubs the filesystem"
+exit $(( FAILURES > 0 ? 1 : 0 ))

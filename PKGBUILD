@@ -28,4 +28,6 @@ package() {
   install -Dm755 tools/er-save-manager-update "$pkgdir/usr/share/checkup/tools/er-save-manager-update"
   install -d "$pkgdir/usr/share/checkup/tools/legion"
   cp -a tools/legion/. "$pkgdir/usr/share/checkup/tools/legion/"
+  install -d "$pkgdir/usr/share/checkup/steps"
+  cp -a steps/. "$pkgdir/usr/share/checkup/steps/"
 }

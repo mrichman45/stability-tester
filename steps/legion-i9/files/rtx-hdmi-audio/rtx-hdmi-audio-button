@@ -1,0 +1,3 @@
+#!/bin/sh
+msg=$(sudo -n /usr/local/bin/rtx-hdmi-audio toggle 2>&1)
+notify-send -a "RTX HDMI Audio" -i audio-card "RTX HDMI Audio" "$msg"

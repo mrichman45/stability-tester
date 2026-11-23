@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="pci", KERNEL=="0000:01:00.1", ATTR{vendor}=="0x10de", TEST!="/etc/rtx-hdmi-audio", ATTR{remove}="1"

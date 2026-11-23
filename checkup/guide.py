@@ -6,7 +6,7 @@ import shutil
 import time
 from pathlib import Path
 
-from .util import HOME, repo_dir, shell_quote
+from .util import HOME, USER, repo_dir, shell_quote
 
 CONFIG_FILE = HOME / ".config/checkup/config.json"
 STATE_FILE = HOME / ".local/state/checkup/state.json"
@@ -146,8 +146,14 @@ def sync_script(path):
     if not (repo / ".git").exists():
         return None
     r = shell_quote(repo)
-    files = [shell_quote(Path(path).resolve())] + ([shell_quote(repo / "machines.json")] if (repo / "machines.json").exists() else [])
+    files = [shell_quote(Path(path).resolve())] + [shell_quote(repo / p) for p in ("machines.json", "tools/legion", "steps")
+                                                   if (repo / p).exists()]
+    user = re.escape(USER)
+    guard = (f"! git diff --cached -U0 | grep -qE '^\\+.*(/home/{user}\\b|\\b{user}\\b)' "
+             "|| { echo 'Stopped: your username is in the changes. Nothing was uploaded.'; "
+             "git diff --cached -U0 | grep -nE '^\\+.*" + user + "'; git reset -q; exit 1; }")
     return [f"cd {r} && git add {' '.join(files)}",
+            f"cd {r} && {guard}",
             f"cd {r} && (git diff --cached --quiet || git commit -m \"Guides: updates recorded by Checkup on $(hostname)\")",
-            f"cd {r} && GIT_TERMINAL_PROMPT=0 git pull --rebase",
+            f"cd {r} && GIT_TERMINAL_PROMPT=0 git pull --rebase --autostash",
             f"cd {r} && GIT_TERMINAL_PROMPT=0 git push"]

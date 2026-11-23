@@ -1,0 +1,9 @@
+#!/bin/sh
+export VK_LOADER_DRIVERS_SELECT='*intel*'
+export __NV_PRIME_RENDER_OFFLOAD=0
+export __VK_LAYER_NV_optimus=non_NVIDIA_only
+export __GLX_VENDOR_LIBRARY_NAME=mesa
+export DXVK_FILTER_DEVICE_NAME=Intel
+export VKD3D_FILTER_DEVICE_NAME=Intel
+exec "$@"
+edited

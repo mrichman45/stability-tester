@@ -94,7 +94,25 @@ def _merge_pacman(lines):
         head = ["sudo pacman -Syu" + (" --needed " + " ".join(pkgs) if pkgs else "")]
     elif pkgs:
         head = ["sudo pacman -S --needed " + " ".join(pkgs)]
-    return head + list(dict.fromkeys(rest))
+    out, seen = [], set()
+    for line in rest:   # drop repeats, but reloads must run again after the files they reload
+        if line in seen and not _RELOAD.search(line):
+            continue
+        if out and out[-1] == line:
+            continue
+        seen.add(line)
+        out.append(line)
+    for pat in _ONCE_AT_END:   # e.g. restart audio once, after every audio file is in place
+        hits = [i for i, l in enumerate(out) if pat.search(l)]
+        for i in reversed(hits[:-1]):
+            del out[i]
+    return head + out
+
+
+_ONCE_AT_END = [re.compile(r"systemctl --user restart pipewire")]
+
+
+_RELOAD = re.compile(r"daemon-reload|udevadm control|kbuildsycoca|limine-update|update-desktop-database|restart pipewire")
 
 
 def build_plan(selected):

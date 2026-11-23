@@ -70,6 +70,7 @@ class Check:
     guide: str               # anchor in GUIDE.md
     func: Callable
     preference: bool = False  # a choice you made (can be ignored without nagging)
+    optional: bool = False    # unticked in "Set up this laptop" unless you tick it
 
 
 class Context:
@@ -78,6 +79,8 @@ class Context:
         self.gui = gui
         self.cfg = cfg
         self.root = {}        # filled by gather_root()
+        self.step_vals = {}   # placeholder values on this laptop (guide steps)
+        self.step_root = {}   # root test results for guide steps
 
     def expects(self, check_id):
         """True when this laptop's profile (machines.json) includes the fix."""
@@ -620,7 +623,9 @@ def _dest(path):
 
 
 def _ntfs_uuid(ctx):
-    return windows_partition(ctx) or ""
+    """The NTFS data drive: the biggest NTFS partition that isn't on the disk CachyOS runs from."""
+    from .steps import values
+    return values(ctx).get("NTFS_UUID", "")
 
 
 def _render(text, ctx):
@@ -766,13 +771,79 @@ CHECKS = [
 ]
 
 
+# ---------------------------------------------------------------- the laptop guide's own steps
+
+def _slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def step_check(step):
+    from . import steps as S
+
+    def func(ctx):
+        vals = ctx.step_vals
+        if step.when:
+            rc, _ = S.test_user(step, vals, step.when + " >/dev/null 2>&1")
+            if rc != 0:
+                return None
+        if step.check_as == "root":
+            if step.id not in ctx.step_root:
+                return Result(SKIP, "Needs your password to check (press Run checks again and authenticate).")
+            rc, msg = ctx.step_root[step.id]
+        else:
+            rc, msg = S.test_user(step, vals)
+        if rc == 0:
+            changes = S.capture_changes(step, vals)
+            if changes:
+                names = ", ".join(d for d, _ in changes[:4]) + (" …" if len(changes) > 4 else "")
+                return Result(WARN, f"Done, and this laptop has settings the repo doesn't: {names}.",
+                              Fix(f"Saved {step.title.lower()} settings to the repo", [],
+                                  python=lambda: f"Saved {S.save_captures(step, vals, changes)} file(s). "
+                                                 "Press Sync with GitHub to share them.",
+                                  preview="Your username, drive IDs and network are replaced with placeholders."))
+            return Result(OK, "Done.")
+        if rc == 3 and msg.startswith("differs:"):   # a file you changed on this laptop
+            repo_file, here = msg[len("differs:"):].split("|", 1)
+            name = Path(here).name
+
+            def save():
+                Path(repo_file).write_text(S.scrub(Path(here).read_text(), vals))
+                return f"Saved your {name} into the repo. Press Sync with GitHub to share it."
+            return Result(WARN, f"Your {name} is different from the guide's; it's left as it is.",
+                          Fix(f"Saved this laptop's {name} to the repo", [], python=save,
+                              preview="Your username, drive IDs and network are replaced with placeholders."))
+        detail = _cap(msg) if msg else "Not done yet."
+        if step.default == "manual" or not step.apply:
+            return Result(WARN, detail, manual=step.manual or "See this step in the guide.")
+        lines = [S.expand(l, step, vals) for l in S.restore_lines(step) + step.apply]
+        return Result(FAIL, detail,
+                      Fix(step.title, lines, python=lambda: (S.stage(step, vals), "Prepared this step's files.")[1],
+                          after=step.after, danger=step.manual if step.default == "off" and step.manual else ""))
+
+    return Check("step:" + step.id, step.title, _slug("Set up this laptop: the guide's steps"), func,
+                 optional=step.default == "off")
+
+
+def all_checks(ctx):
+    """The built-in checks, with this laptop's guide steps before the scan's extras."""
+    from . import steps as S
+    guide_steps = S.load(ctx.machine)
+    ctx.step_vals = S.values(ctx) if guide_steps else {}
+    roots = [s for s in guide_steps if s.check_as == "root"]
+    ctx.step_root = S.test_root_batch(roots, ctx.step_vals, ctx.gui) if roots else {}
+    extra = [step_check(s) for s in guide_steps]
+    at = next(i for i, c in enumerate(CHECKS) if c.id == "extras")
+    return CHECKS[:at] + extra + CHECKS[at:]
+
+
 def run_checks(ctx, ignored=(), progress=None):
     """Run every check; returns [(Check, Result)] for checks that apply."""
     ctx.gather_root(which("sbctl") or ctx.expects("windows-drive"))
+    checks = all_checks(ctx)
     results = []
-    for i, check in enumerate(CHECKS):
+    for i, check in enumerate(checks):
         if progress:
-            progress(i, len(CHECKS), check.title)
+            progress(i, len(checks), check.title)
         if check.id in ignored:
             results.append((check, Result(SKIP, "Ignored (you chose not to check this).")))
             continue

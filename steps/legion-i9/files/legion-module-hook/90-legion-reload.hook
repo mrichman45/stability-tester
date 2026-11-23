@@ -1,0 +1,10 @@
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Target = lenovolegionlinux-dkms*
+
+[Action]
+Description = Reloading legion_laptop and restarting legion-system
+When = PostTransaction
+Exec = /bin/sh -c "modprobe -r legion_laptop 2>/dev/null; modprobe legion_laptop; systemctl restart legion-system"

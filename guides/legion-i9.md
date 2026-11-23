@@ -182,6 +182,69 @@ Then restart.
 
 ---
 
+## Set up this laptop: the guide's steps
+
+Every setup section of the full Legion guide is a step in `steps/legion-i9/`: a test that says whether
+it's done, and the commands that do it. **Set up this laptop** runs every step that isn't done, with
+one password prompt. Steps already done are skipped. A file you've changed on this laptop (a config,
+a script) is never overwritten: Checkup offers to save your version to the repo instead, with your
+username, drive IDs and network replaced by placeholders. Optional steps start unticked;
+`checkup-cli apply --optional` includes them.
+
+Not automated, because they happen outside CachyOS or in another app's window: the BIOS settings
+(install step 1), the installer itself (install steps 2–6), Secure Boot's Setup Mode and key
+enrolment (section 17), fan presets in `sudo legion_gui`, Steam/Heroic settings, the Windows side of
+WinBoat, and Bottles (Flatpak only). Checkup still tests the ones it can and says what to do.
+
+| Step | Guide section | How |
+|---|---|---|
+| Base packages the later sections rely on | Install step 7. First boot and checks | automatic |
+| First-boot checks: multilib, firewall, snapshots, fish | Install step 7. First boot and checks | automatic |
+| Computer name "legion" | 2. Kernel, power modes and fans | automatic |
+| NTFS data drive mounts at /mnt/ntfsdrive | 1. The NTFS data drive | automatic — only when [ -n "$NTFS_UUID" ] |
+| Proton prefixes for the NTFS Steam library live on the Linux drive | Games on the NTFS drive | automatic — only when [ -d /mnt/ntfsdrive/Games/SteamLibrary/steamapps ] |
+| Dolphin doesn't offer the data drive twice or ask to mount Windows | Errors seen and fixes | automatic — only when [ -n "$NTFS_UUID" ] |
+| The LTS kernel starts by default | Kernel and stability settings | automatic |
+| Drive health warnings, monthly scrub, and trim done once | Kernel and stability settings | automatic |
+| Legion module reloads itself after a driver update | If the Legion module stops being loaded | automatic |
+| LenovoLegionLinux: fans, Fn+Q modes, battery limit | Fans, power modes, battery (Vantage replacement) | automatic |
+| legiond: fan presets on, its CPU and GPU control off | Enable legiond (automatic fan profiles) | automatic — only when [ -d /usr/share/legion_linux ] &#124;&#124; [ -d /etc/legion_linux ] |
+| PRIME offload tools, Intel Vulkan, nvidia-persistenced off | 3. Graphics: which GPU runs what | automatic |
+| RTX HDMI audio switch (lets the RTX power down) | HDMI audio switch | automatic |
+| GPU widgets don't wake the RTX | GPU widgets that don't wake the RTX | automatic — only when [ -e ~/.local/share/nvstats-service/backend/nvstats_gpu.py ] &#124;&#124; [ -e ~/.local/share/plasma/plasmoids/org.dfuse.hardwaremonitor/contents/scripts/sensors.py ] |
+| intel-run (pins an app to the Intel GPU) | intel-run and the Steam menu entry (plumbing for section 3's GPU rules) | automatic |
+| Every way of starting Steam goes through steam-gpu | intel-run and the Steam menu entry (plumbing for section 3's GPU rules) | automatic — only when [ -e /usr/share/applications/steam.desktop ] |
+| Heroic games pick their GPU when they launch | Heroic: the GPU per game | automatic — only when [ -e ~/.config/heroic/config.json ] |
+| Eden (Switch emulator) in the menu, on the GPU rules | Eden (Switch emulator) | automatic — only when [ -e ~/Applications/Eden.AppImage ] |
+| Speakers never go to sleep (no silence after Bluetooth) | Speakers: no sound after switching from Bluetooth | automatic |
+| Built-in mic: fan noise removed | Mic: remove fan noise | automatic |
+| Dock mic: keyboard and fan noise removed | Bluetooth headset (Galaxy Buds3 Pro) | automatic |
+| USB headsets start with their analog mic | Bluetooth headset (Galaxy Buds3 Pro) | automatic |
+| Bigger audio buffer for every app (no hiccups in games) | Audio buffer for every app (stops hiccups) | automatic |
+| Hardware video decoding and recording on the Intel GPU | Hardware video on the Intel GPU | automatic |
+| Firmware updates (fwupd) | Firmware updates | automatic |
+| Kup backups | Backups of your files | automatic |
+| Printing and scanning | Printing and scanning | automatic |
+| Canon UFR II printer driver | Printers | automatic |
+| Microsoft fonts for Office documents | Microsoft fonts | automatic |
+| OneDrive as a folder (rclone) | OneDrive (if you use it) | optional (unticked) |
+| Japanese typing (Fcitx 5 + Mozc) | Japanese typing (Fcitx 5 + Mozc) | automatic |
+| Anki starts (software rendering) and plays card audio | Anki | automatic — only when pacman -Q anki &#124;&#124; pacman -Q anki-bin &#124;&#124; pacman -Q anki-qt5 |
+| Gaming stack: Steam, Heroic, Lutris, MangoHud, proton-cachyos, GE-Proton | 6. Gaming | automatic |
+| Bigger NVIDIA shader cache | 6. Gaming | automatic |
+| The Convergence: Seamless Co-op or Solo picker | Step 7: Choose Seamless Co-op or Solo each launch | automatic — only when [ -d ~/Games/ConvergenceER ] |
+| Docker networks stay off your home network's addresses | 8. Docker, and reaching your home network from containers | automatic — only when pacman -Q docker |
+| WinBoat with working USB passthrough | 9. WinBoat: Windows apps, with your shares | optional (unticked) |
+| legion-integrity (is the system intact?) | Integrity check | automatic |
+| pacman checks for free space before updating | Config files pacman left as .pacnew | automatic |
+| No outdated NVIDIA options at boot | Leftover NVIDIA options after an update | automatic — only when ls /etc/modprobe.d/*.conf |
+| Hibernation (32 GiB swapfile, resume from it) | 14. Hibernation | automatic |
+| Blu-ray: MakeMKV and VLC | 15. Blu-ray: MakeMKV and VLC | optional (unticked) |
+| Waywallen starts at login, on the Intel GPU | 16. Waywallen at login (KDE Plasma) | automatic — only when command -v waywallen |
+| Limine re-signs itself after every snapshot (Secure Boot) | 17. Secure Boot (do this last) | automatic — only when pacman -Q sbctl |
+| Secure Boot is on | 17. Secure Boot (do this last) | you do it; Checkup checks |
+| Windows is in the boot menu | Install step 8. Windows in the boot menu (when reinstalling) | you do it; Checkup checks — only when [ -n "$WINDOWS_UUID" ] |
+
 ## Custom Legion services (power, audio, GPU)
 
 These are the services written for this laptop. The files live in `tools/legion/` in this repo, with
