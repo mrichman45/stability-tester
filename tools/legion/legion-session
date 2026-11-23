@@ -359,8 +359,8 @@ context.modules = [
                     plugin = /usr/lib/ladspa/librnnoise_ladspa.so
                     label  = noise_suppressor_mono
                     control = {
-                        "VAD Threshold (%)" = 25.0
-                        "VAD Grace Period (ms)" = 400
+                        "VAD Threshold (%)" = 50.0
+                        "VAD Grace Period (ms)" = 200
                     }
                 }
             ]
@@ -390,7 +390,7 @@ CONF_EOF
 dock_conf() { cat <<'CONF_EOF'
 # Dock Mic: the Belkin Thunderbolt 4 dock's headset mic, cleaned up.
 # The dock's mic is mono and arrives as the same signal on both "Analog Stereo" channels, so this
-# takes one channel and runs it through RNNoise (the same filter as the laptop mic in section 4)
+# takes one channel and runs it through RNNoise (the same filter as the laptop mic in section 11)
 # to remove keyboard clicks and fan noise. The dock has no mic boost; legion-session sets its
 # gain (DOCK_GAIN, 170% = +14 dB) whenever the dock connects.
 # Needs: sudo pacman -S noise-suppression-for-voice
