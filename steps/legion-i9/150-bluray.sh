@@ -11,7 +11,8 @@ check() {
 }
 
 apply() {
-sudo pacman -S --needed vlc-plugins-all jre17-openjdk
+sudo pacman -S --needed vlc-plugins-all
+sudo pacman -Q jre17-openjdk >/dev/null 2>&1 || pacman -Q jdk17-openjdk >/dev/null 2>&1 || pacman -S --needed --noconfirm jre17-openjdk
 @aur makemkv
 sudo modprobe sg
 sudo echo sg > /etc/modules-load.d/sg.conf
