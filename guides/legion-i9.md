@@ -210,7 +210,7 @@ WinBoat, and Bottles (Flatpak only). Checkup still tests the ones it can and say
 | LenovoLegionLinux: fans, Fn+Q modes, battery limit | Fans, power modes, battery (Vantage replacement) | automatic |
 | legiond: fan presets on, its CPU and GPU control off | Enable legiond (automatic fan profiles) | automatic — only when [ -d /usr/share/legion_linux ] &#124;&#124; [ -d /etc/legion_linux ] |
 | PRIME offload tools, Intel Vulkan, nvidia-persistenced off | 3. Graphics: which GPU runs what | automatic |
-| RTX HDMI audio switch (lets the RTX power down) | HDMI audio switch | automatic |
+| RTX HDMI audio switch (lets the RTX power down) | HDMI audio switch | optional (unticked) |
 | GPU widgets don't wake the RTX | GPU widgets that don't wake the RTX | automatic — only when [ -e ~/.local/share/nvstats-service/backend/nvstats_gpu.py ] &#124;&#124; [ -e ~/.local/share/plasma/plasmoids/org.dfuse.hardwaremonitor/contents/scripts/sensors.py ] |
 | intel-run (pins an app to the Intel GPU) | intel-run and the Steam menu entry (plumbing for section 3's GPU rules) | automatic |
 | Every way of starting Steam goes through steam-gpu | intel-run and the Steam menu entry (plumbing for section 3's GPU rules) | automatic — only when [ -e /usr/share/applications/steam.desktop ] |

@@ -5,7 +5,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 
 check() {
-  need_pkgs fcitx5-im fcitx5-mozc noto-fonts-cjk || return 1
+  need_pkgs fcitx5 fcitx5-configtool fcitx5-gtk fcitx5-qt fcitx5-mozc noto-fonts-cjk || return 1
   grep -q '^XMODIFIERS=@im=fcitx' /etc/environment || { echo "XWayland apps (Steam, games) can't type Japanese"; return 1; }
   [ "$(kreadconfig6 --file kwinrc --group Wayland --key InputMethod 2>/dev/null)" = /usr/share/applications/org.fcitx.Fcitx5.desktop ] || { echo "Plasma doesn't start Fcitx 5"; return 1; }
 }

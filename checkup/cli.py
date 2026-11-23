@@ -38,7 +38,8 @@ def pick_machine(cfg):
 
 def show(results):
     for c, r in results:
-        print(f"  {paint(r.status, SYMBOL[r.status])} {c.title:42} {r.detail}")
+        title = c.title + (" (optional)" if getattr(c, "optional", False) else "")
+        print(f"  {paint(r.status, SYMBOL[r.status])} {title:42} {r.detail}")
         if r.manual:
             print(f"      → {r.manual}")
 
