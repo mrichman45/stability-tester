@@ -1,0 +1,12 @@
+[Unit]
+Description=MSI: headset audio switching, call mode, mic power, weekly update reminder
+After=pipewire-pulse.service plasma-workspace.target
+Wants=pipewire-pulse.service
+
+[Service]
+ExecStart=%h/.local/bin/msi-session
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

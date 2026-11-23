@@ -36,6 +36,44 @@ Checkup found gets fixed, it adds an entry to the [Fix log](#fix-log) at the bot
    **Reapply fixes** puts back anything an update broke.
 
 ---
+## Set up this laptop: the guide's steps
+
+Every setup section of the full guide is a step in `steps/lenovo-i7/`: a test that says whether it's done,
+and the commands that do it. **Set up this laptop** runs every step that isn't done, with one password
+prompt; steps already done are skipped. A file changed on this laptop is never overwritten: Checkup
+offers to save that version to the repo instead, with usernames, drive IDs and the home network
+replaced by placeholders. Optional steps start unticked; `checkup-cli apply --optional` includes them.
+
+Not automated, because they happen outside CachyOS or inside another app: the installer itself (install steps 1–6), the BIOS settings (virtualization on, VMD off, Secure Boot off), WinBoat's own Windows setup, the Discover update settings, the keyboard layout switching shortcut, and Secure Boot's Setup Mode and key enrolment (section 15).
+Checkup still tests the ones it can and says what to do.
+
+| Step | Guide section | How |
+|---|---|---|
+| Sound firmware, NTFS tools and update snapshots | 7. First boot and checks | automatic |
+| First-boot checks: multilib, firewall, snapshots, fish | 7. First boot and checks | automatic |
+| The computer has its own name | Keeping it stable | you do it; Checkup checks |
+| Drive health warnings, monthly scrub, and trim done once | Keeping it stable | automatic |
+| CachyOS login screen and desktop theme | 8. Extra software and the CachyOS look | automatic |
+| Hardware video on the Intel GPU (and Spectacle recording) | 10. Intel graphics and video | automatic |
+| VLC with all plugins | VLC with all plugins | automatic |
+| WinBoat, Docker and FreeRDP | 12. WinBoat: Windows apps | automatic |
+| Virtualization (KVM) is on for WinBoat | Install | you do it; Checkup checks |
+| Transfer folder shared with Windows | Moving files from a flash drive into Windows | automatic — only when pacman -Q winboat |
+| WinBoat's USB Passthrough panel works (camera, drives) | Making the USB Passthrough panel work | automatic — only when pacman -Q winboat |
+| Hibernation (16 GiB swapfile, resume from it) | 13. Hibernation | optional (unticked) |
+| Battery stops charging early (lasts for years) | Stop charging at 60% | automatic — only when ls /sys/bus/platform/drivers/ideapad_acpi/*/conservation_mode |
+| Low-power settings at every start (lenovo-power) | A few power settings | automatic |
+| Sound follows the TV when HDMI is plugged in | If sound does not move to the TV | optional (unticked) |
+| Bigger audio buffer for every app (no hiccups in games) | If the sound crackles (optional) | optional (unticked) |
+| Firmware updates (fwupd) | Firmware updates | automatic |
+| Kup backups | Backing up her files | automatic |
+| Printing and scanning | Printers | automatic |
+| Hebrew and Spanish typing and spell check | Hebrew and Spanish typing | automatic |
+| Limine re-signs itself after every snapshot (Secure Boot) | 15. Secure Boot (do this last) | automatic — only when pacman -Q sbctl |
+| Secure Boot is on | 15. Secure Boot (do this last) | you do it; Checkup checks |
+| Firmware updates still work with Secure Boot | 15. Secure Boot (do this last) | automatic — only when pacman -Q sbctl && pacman -Q fwupd |
+| Updates with a click in Discover | 16. Updates with Discover | automatic |
+
 ## Updates and packages
 
 <a id="reading-an-update-list"></a>

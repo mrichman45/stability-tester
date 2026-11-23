@@ -1,0 +1,128 @@
+#!/bin/bash
+# winboat-usb: move any USB device between Linux and WinBoat's Windows
+# Usage: winboat-usb list                  attachable USB devices
+#        winboat-usb status                what is in Windows now
+#        winboat-usb windows <device>      give it to Windows
+#        winboat-usb linux <device>        take it back
+#        winboat-usb toggle <device>       swap it over
+# <device> is a VVVV:PPPP id from "list", or part of its name (camera, PNY, ...)
+set -uo pipefail
+
+AUTOFIX=yes   # no = don't clear the NTFS dirty flag when a drive comes back from Windows
+
+list_devices() { lsusb | grep -vE 'Linux Foundation|root hub'; }
+
+resolve() {   # id or name fragment -> VVVV:PPPP
+  local q=$1 line
+  [[ $q =~ ^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$ ]] && { echo "${q,,}"; return 0; }
+  line=$(list_devices | grep -i -- "$q" | head -n1)
+  [[ -n $line ]] && echo "$line" | grep -oE '[0-9a-f]{4}:[0-9a-f]{4}' | head -n1
+}
+
+qid() { echo "usb_${1/:/_}"; }
+
+release_driver() {   # let the host's usb-storage/uas driver go, so QEMU gets the whole device
+  local v=${1%%:*} p=${1##*:} dev iface drv
+  for dev in /sys/bus/usb/devices/*; do
+    [ -f "$dev/idVendor" ] || continue
+    [ "$(cat "$dev/idVendor")" = "$v" ] || continue
+    [ "$(cat "$dev/idProduct")" = "$p" ] || continue
+    for iface in "$dev":*; do
+      [ -e "$iface/driver" ] || continue
+      drv=$(basename "$(readlink -f "$iface/driver")")
+      case "$drv" in
+        usb-storage|uas)
+          echo -n "${iface##*/}" > "/sys/bus/usb/drivers/$drv/unbind" 2>/dev/null &&
+            echo "released $drv from ${iface##*/}" ;;
+      esac
+    done
+  done
+  return 0
+}
+
+ntfs_autofix() {   # clear the NTFS dirty flag Windows leaves behind, on this device's partitions
+  [ "$AUTOFIX" = yes ] || return 0
+  command -v ntfsfix >/dev/null || return 0
+  local v=${1%%:*} p=${1##*:} disk props part fstype out
+  for disk in /dev/sd?; do
+    [ -b "$disk" ] || continue
+    props=$(udevadm info -q property -n "$disk" 2>/dev/null)
+    grep -q "^ID_VENDOR_ID=$v\$" <<<"$props" || continue
+    grep -q "^ID_MODEL_ID=$p\$"  <<<"$props" || continue
+    while read -r part fstype; do
+      [ "$fstype" = ntfs ] || continue
+      findmnt -rn -S "$part" >/dev/null && continue        # mounted already: leave it alone
+      out=$(ntfsfix -n "$part" 2>&1)
+      case "$out" in
+        *"temporarily unavailable"*|*"Device or resource busy"*)
+          echo "$part is busy (auto-mounted?); skipped."
+          echo "  to clean it: udisksctl unmount -b $part; sudo ntfsfix -d $part"
+          continue ;;
+      esac
+      ntfsfix -n "$part" >/dev/null 2>&1 && continue       # already clean: nothing to do
+      out=$(ntfsfix -d "$part" 2>&1)
+      if ntfsfix -n "$part" >/dev/null 2>&1; then
+        echo "cleaned $part"
+      else
+        echo "$part still has problems; run 'chkdsk /f' on it from Windows."
+        echo "$out" | tail -n3
+      fi
+    done < <(lsblk -nrpo NAME,FSTYPE "$disk" | awk 'NF==2')
+  done
+  return 0
+}
+
+unmount_storage() {   # unmount any mounted partitions belonging to this USB device
+  local v=${1%%:*} p=${1##*:} disk props part mp
+  for disk in /dev/sd?; do
+    [ -b "$disk" ] || continue
+    props=$(udevadm info -q property -n "$disk" 2>/dev/null)
+    grep -q "^ID_VENDOR_ID=$v\$" <<<"$props" || continue
+    grep -q "^ID_MODEL_ID=$p\$"  <<<"$props" || continue
+    while read -r part mp; do
+      [ -n "${mp:-}" ] || continue
+      udisksctl unmount -b "$part" >/dev/null 2>&1 || umount "$part" 2>/dev/null || {
+        echo "Couldn't unmount $part. Close anything using it first."; return 1; }
+      echo "unmounted $part"
+    done < <(lsblk -nrpo NAME,MOUNTPOINT "$disk" | awk 'NF==2')
+  done
+  return 0
+}
+
+action=${1:-status}; target=${2:-}
+[ "$action" = list ] && { list_devices; exit 0; }
+
+pid=$(docker inspect -f '{{.State.Pid}}' WinBoat 2>/dev/null)
+[ -n "$pid" ] && [ "$pid" != 0 ] || { echo "WinBoat's Windows isn't running. Start it first."; exit 1; }
+sock=/proc/$pid/root/dev/shm/monitor.sock
+mon() { { echo "$1"; sleep 1.5; } | socat - "UNIX-CONNECT:$sock" 2>&1; }
+
+if [ "$action" = status ] && [ -z "$target" ]; then
+  mon "info usb" | grep -E 'Device [0-9]' | grep -v Tablet || echo "Nothing passed through."
+  exit 0
+fi
+
+id=$(resolve "$target") || true
+[ -n "${id:-}" ] || { echo "No USB device matches '$target'. Try: winboat-usb list"; exit 1; }
+name=$(qid "$id")
+is_on() { mon "info usb" | grep -q "ID: $name"; }
+
+[ "$action" = toggle ] && { is_on && action=linux || action=windows; }
+
+case "$action" in
+  windows|status)
+    is_on && { echo "Already in Windows."; exit 0; }
+    unmount_storage "$id" || exit 1
+    release_driver "$id"
+    mon "device_add usb-host,bus=xhci.0,vendorid=0x${id%%:*},productid=0x${id##*:},id=$name" >/dev/null
+    is_on && echo "Moved to Windows: $id" || { echo "Couldn't attach $id."; exit 1; } ;;
+  linux)
+    is_on || { echo "Already in Linux."; exit 0; }
+    mon "device_del $name" >/dev/null
+    for _ in 1 2 3 4 5; do
+      is_on || { echo "Back in Linux: $id"; sleep 2; ntfs_autofix "$id"; exit 0; }
+      sleep 1
+    done
+    echo "Couldn't take $id back."; exit 1 ;;
+  *) echo "Usage: winboat-usb list | status | windows <device> | linux <device> | toggle <device>"; exit 1 ;;
+esac

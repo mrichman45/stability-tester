@@ -1,0 +1,11 @@
+[Unit]
+Description=Low-power settings for the laptop
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/lenovo-power
+
+[Install]
+WantedBy=multi-user.target

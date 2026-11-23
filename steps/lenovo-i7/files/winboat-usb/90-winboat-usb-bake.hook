@@ -1,0 +1,19 @@
+# Re-apply the WinBoat USB passthrough fix after the package is installed or upgraded.
+#
+# WinBoat's own device_add over QMP reports success but never reaches QEMU, so its
+# USB Passthrough panel does nothing. This patch routes the panel's attach and detach
+# through /usr/local/bin/winboat-usb, which uses QEMU's monitor socket and works.
+#
+# A package upgrade replaces app.asar, so the patch has to be put back each time.
+# Remove this hook if WinBoat ever fixes it upstream.
+
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Target = winboat
+
+[Action]
+Description = Re-applying the WinBoat USB passthrough fix
+When = PostTransaction
+Exec = /usr/local/bin/winboat-usb-bake

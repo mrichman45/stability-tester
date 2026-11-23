@@ -10,6 +10,8 @@
     "checks": [
       "updates",
       "reboot",
+      "kernel",
+      "secure-boot",
       "fastfetch",
       "docker",
       "vlc",
@@ -29,7 +31,9 @@
     "limits": {
       "cpu": 100,
       "gpu": 87
-    }
+    },
+    "steps": "steps/lenovo-i7",
+    "kernel": "linux-cachyos-lts"
   },
   "legion-i9": {
     "label": "Lenovo Legion i9",
@@ -160,6 +164,7 @@
       "updates",
       "nvidia",
       "reboot",
+      "secure-boot",
       "usb-automount",
       "dns"
     ],
@@ -170,6 +175,7 @@
     "limits": {
       "cpu": 95,
       "gpu": 87
-    }
+    },
+    "steps": "steps/msi-gf75"
   }
 }

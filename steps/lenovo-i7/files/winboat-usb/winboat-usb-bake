@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Make WinBoat's own USB Passthrough panel work, by routing it through winboat-usb.
+
+Why: WinBoat talks to QEMU over QMP (tcp 7149). Its device_add reports success,
+QEMU never receives the device, and QEMU logs no error - tested with a fresh
+container, a single clean QMP connection, and valid device ids. Something in its
+QMP reply handling is wrong, and that is not fixable from outside.
+
+What this does: replaces the two qmpMgr.executeCommand(...) calls in the bundled
+app with a call to /usr/local/bin/winboat-usb, which drives QEMU's HMP monitor
+socket instead and is known to work. WinBoat's panel stays the front end; the
+attach, the detach and the unmounting of storage devices happen underneath.
+
+The replacement is longer than the original, so the archive is unpacked and
+rebuilt rather than byte-patched. Every other file is copied through unchanged
+and verified byte-for-byte afterwards; the original is kept.
+
+    sudo winboat-usb-bake            apply
+    sudo winboat-usb-bake --status   is it applied?
+    sudo winboat-usb-bake --undo     restore the original archive
+
+Requires: /usr/local/bin/winboat-usb, and the sudoers rule that lets it run
+without a password (both come from the winboat-usb install block).
+"""
+
+import json
+import os
+import re
+import shutil
+import struct
+import sys
+
+ASAR = "/opt/winboat/resources/app.asar"
+BACKUP = ASAR + ".orig"
+HELPER = "/usr/local/bin/winboat-usb"
+
+# The two call sites. Variable names are minified and change between builds, so
+# they are captured rather than hard-coded. The id may hold ':' (stock) or '_'
+# (if the earlier one-character fix was applied) - either is matched.
+ADD = re.compile(
+    rb'\w+\(this,\w+\)\.qmpMgr\.executeCommand\("device_add",'
+    rb'\{driver:"usb-host",id:`\$\{(\w+)\}[:_]\$\{(\w+)\}`,'
+    rb"vendorid:\1,productid:\2,hostdevice:\w+\}\)"
+)
+DEL = re.compile(
+    rb'\w+\(this,\w+\)\.qmpMgr\.executeCommand\("device_del",'
+    rb"\{id:`\$\{(\w+)\}[:_]\$\{(\w+)\}`\}\)"
+)
+
+# WinBoat gates the detach twice over: on #QMPCheckIfDeviceExists, which sits on
+# the same broken QMP query layer and answers false, and on isOnline, which was
+# observed false at the moment Remove was pressed on one machine. Either one
+# short-circuits before #QMPRemoveDevice, so "Remove" in the panel only edits
+# WinBoat's own list and the device stays in Windows. Both conditions are
+# dropped here; winboat-usb does its own check that the container is running and
+# exits cleanly if it is not.
+#
+# GATE_FULL is the stock shape; GATE_HALF catches a build already patched by an
+# earlier version of this script, which removed only the first condition. The
+# add path has the mirror check (!await ...) and ends in .call(this,<device>),
+# and the disconnect listener passes device.deviceDescriptor.idVendor, so
+# neither matches these patterns.
+GATE_FULL = re.compile(
+    rb"\w+\(this,\w+\)\.isOnline\.value&&await \w+\(this,\w+,\w+\)"
+    rb"\.call\(this,(\w+)\.vendorId,\1\.productId\)"
+    rb"&&(await \w+\(this,\w+,\w+\)\.call\(this,\1\.vendorId,\1\.productId\))"
+)
+GATE_HALF = re.compile(
+    rb"\w+\(this,\w+\)\.isOnline\.value&&"
+    rb"(await \w+\(this,\w+,\w+\)\.call\(this,(\w+)\.vendorId,\2\.productId\))"
+)
+
+
+MARKER = b"winboat-usb-bake"
+
+
+def shell_call(verb, vendor, product):
+    """JS that calls winboat-usb and resolves the way the caller expects.
+
+    WinBoat holds the ids as decimals; winboat-usb wants VVVV:PPPP in hex. The
+    caller does assert("result" in <value>), so resolve with that shape. Failures
+    resolve too: WinBoat logs its own error and the panel stays usable.
+    """
+    hexid = (
+        b"(" + vendor + b").toString(16).padStart(4,'0')+':'+"
+        b"(" + product + b").toString(16).padStart(4,'0')"
+    )
+    return (
+        b"new Promise(_wbR=>{require('node:child_process').execFile("
+        b"'sudo',['-n','" + HELPER.encode() + b"','" + verb + b"'," + hexid + b"],"
+        b"{timeout:60000},(_wbE,_wbO)=>_wbR({result:_wbE?0:1,/*" + MARKER + b"*/}))})"
+    )
+
+
+# ---------------------------------------------------------------- asar format
+
+
+def read_asar(path):
+    raw = open(path, "rb").read()
+    if len(raw) < 16:
+        sys.exit("archive too small to be an asar")
+    (_, header_size, _, json_len) = struct.unpack("<IIII", raw[:16])
+    header = json.loads(raw[16 : 16 + json_len].decode("utf-8"))
+    base = 8 + header_size
+    return raw, header, base
+
+
+def walk(node, prefix=""):
+    """Yield (path, entry) for every file in the header tree."""
+    for name, entry in node.get("files", {}).items():
+        path = f"{prefix}/{name}" if prefix else name
+        if "files" in entry:
+            yield from walk(entry, path)
+        elif "offset" in entry:
+            yield path, entry
+
+
+def write_asar(path, header, entries, blobs):
+    """entries: list of (entry_dict, bytes) in the order they should be stored."""
+    out = bytearray()
+    for entry, data in zip(entries, blobs):
+        entry["offset"] = str(len(out))
+        entry["size"] = len(data)
+        out += data
+
+    header_json = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    json_len = len(header_json)
+    padding = (4 - json_len % 4) % 4
+    # chromium Pickle: [u32 4][u32 headerBufLen] then [u32 payloadLen][u32 strLen][str+pad]
+    payload_len = 4 + json_len + padding
+    header_buf_len = 4 + payload_len
+
+    with open(path, "wb") as f:
+        f.write(struct.pack("<IIII", 4, header_buf_len, payload_len, json_len))
+        f.write(header_json)
+        f.write(b"\0" * padding)
+        f.write(out)
+
+
+# ---------------------------------------------------------------- operations
+
+
+def find_bundle(raw, header, base):
+    """The file holding the two call sites."""
+    for path, entry in walk(header):
+        off, size = int(entry["offset"]), entry["size"]
+        data = raw[base + off : base + off + size]
+        if ADD.search(data) or DEL.search(data) or GATE_FULL.search(data) or GATE_HALF.search(data) or MARKER in data:
+            return path, entry, data
+    return None, None, None
+
+
+def status():
+    raw, header, base = read_asar(ASAR)
+    path, entry, data = find_bundle(raw, header, base)
+    if path is None:
+        print("no WinBoat USB call sites found - this build differs")
+        return 2
+    if MARKER in data:
+        print(f"applied (in {path})")
+        return 0
+    print(f"not applied; found {len(ADD.findall(data))} add, "
+          f"{len(DEL.findall(data))} del and "
+          f"{len(GATE_FULL.findall(data)) + len(GATE_HALF.findall(data))} "
+          f"detach-gate site(s) in {path}")
+    return 1
+
+
+def apply():
+    if not os.path.exists(HELPER):
+        sys.exit(f"{HELPER} is missing - install winboat-usb first")
+
+    raw, header, base = read_asar(ASAR)
+    target, entry, data = find_bundle(raw, header, base)
+    if target is None:
+        sys.exit("call sites not found; nothing written")
+    if MARKER in data:
+        print("already applied - nothing to do")
+        return
+
+    n_add = len(ADD.findall(data))
+    n_del = len(DEL.findall(data))
+    if n_add == 0 or n_del == 0:
+        sys.exit(f"expected both call sites, found add={n_add} del={n_del}; nothing written")
+
+    patched = ADD.sub(lambda m: shell_call(b"windows", m.group(1), m.group(2)), data)
+    patched = DEL.sub(lambda m: shell_call(b"linux", m.group(1), m.group(2)), patched)
+    n_gate = 0
+    for rx, repl in ((GATE_FULL, rb"\2"), (GATE_HALF, rb"\1")):
+        n = len(rx.findall(patched))
+        if n:
+            patched = rx.sub(repl, patched)
+            n_gate += n
+    if n_gate:
+        print(f"removing {n_gate} detach gate(s) so Remove actually detaches")
+    else:
+        print("WARNING: detach gate not found - the panel's Remove button may "
+              "still do nothing. Take devices back with: winboat-usb linux <id>")
+    entry.pop("integrity", None)   # only this file changed; others keep their hashes
+    print(f"patching {target}: {n_add} attach, {n_del} detach call site(s)")
+
+    # rebuild, substituting only that file
+    items = list(walk(header))
+    entries, blobs = [], []
+    for path, ent in items:
+        off, size = int(ent["offset"]), ent["size"]
+        entries.append(ent)
+        blobs.append(patched if path == target else raw[base + off : base + off + size])
+
+    if not os.path.exists(BACKUP):
+        shutil.copy2(ASAR, BACKUP)
+        print(f"backup: {BACKUP}")
+
+    tmp = ASAR + ".new"
+    write_asar(tmp, header, entries, blobs)
+
+    # verify: re-read and compare every file against what went in
+    vraw, vheader, vbase = read_asar(tmp)
+    seen = {p: e for p, e in walk(vheader)}
+    if len(seen) != len(items):
+        os.unlink(tmp)
+        sys.exit(f"verification failed: {len(seen)} files out, {len(items)} in; nothing replaced")
+    for (path, _), data_in in zip(items, blobs):
+        e = seen.get(path)
+        if e is None:
+            os.unlink(tmp)
+            sys.exit(f"verification failed: {path} missing from the rebuilt archive")
+        off, size = int(e["offset"]), e["size"]
+        if vraw[vbase + off : vbase + off + size] != data_in:
+            os.unlink(tmp)
+            sys.exit(f"verification failed: {path} differs; nothing replaced")
+
+    shutil.copymode(ASAR, tmp)
+    os.replace(tmp, ASAR)
+    print(f"done: {len(items)} files, {os.path.getsize(ASAR)} bytes")
+    print("restart WinBoat, then use its USB Passthrough panel as normal")
+
+
+def undo():
+    if not os.path.exists(BACKUP):
+        sys.exit(f"no backup at {BACKUP}")
+    shutil.copy2(BACKUP, ASAR)
+    print(f"restored {ASAR} from {BACKUP}")
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if "--status" in args:
+        sys.exit(status())
+    if os.geteuid() != 0:
+        sys.exit("run as root")
+    undo() if "--undo" in args else apply()

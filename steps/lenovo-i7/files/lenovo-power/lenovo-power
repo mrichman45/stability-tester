@@ -1,0 +1,30 @@
+#!/bin/sh
+# lenovo-power: a few settings that make the laptop use less power.
+#
+# Runs once at every start. There is nothing to configure and nothing to run by
+# hand afterwards.
+#
+#   1. lets the chips on the PCI bus idle properly when nothing is using them
+#   2. writes changed files to disk in batches instead of constantly, so the
+#      drive wakes up less often
+#
+# The disk the system boots from is deliberately left alone: its power saving is
+# the one setting that has been known to misbehave on some drives, and a laptop
+# that will not boot is a far worse outcome than a slightly shorter battery.
+
+for dev in /sys/bus/pci/devices/*/; do
+    [ -e "$dev/power/control" ] || continue
+
+    # skip the drive the system lives on
+    driver=""
+    if [ -L "$dev/driver" ]; then
+        driver=$(basename "$(readlink -f "$dev/driver")")
+    fi
+    [ "$driver" = nvme ] && continue
+
+    echo auto > "$dev/power/control" 2>/dev/null || true
+done
+
+echo 1500 > /proc/sys/vm/dirty_writeback_centisecs 2>/dev/null || true
+
+exit 0

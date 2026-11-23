@@ -1,0 +1,13 @@
+[Unit]
+Description=Send sound to the TV while it is plugged in
+After=pipewire.service wireplumber.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hdmi-audio-follow watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

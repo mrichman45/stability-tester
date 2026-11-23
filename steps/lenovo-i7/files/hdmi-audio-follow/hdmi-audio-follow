@@ -1,0 +1,63 @@
+#!/bin/sh
+# hdmi-audio-follow - send sound to the TV when it is connected, speakers when it is not.
+
+HDMI_MATCH=${HDMI_MATCH:-hdmi}       # substring identifying the HDMI sink
+ANALOG_MATCH=${ANALOG_MATCH:-analog} # substring identifying the speakers
+MOVE_STREAMS=${MOVE_STREAMS:-yes}    # also move already-playing audio across
+SETTLE=${SETTLE:-1}                  # seconds to let a burst of events finish
+
+log() { echo "$*"; }
+
+sink_named() {  # first sink whose name contains $1, or empty
+  pactl list short sinks 2>/dev/null | awk -v m="$1" 'index($2, m) { print $2; exit }'
+}
+
+move_streams() {  # $1 = target sink name
+  [ "$MOVE_STREAMS" = yes ] || return 0
+  pactl list short sink-inputs 2>/dev/null | cut -f1 | while read -r id; do
+    [ -n "$id" ] || continue
+    pactl move-sink-input "$id" "$1" 2>/dev/null
+  done
+}
+
+apply() {
+  hdmi=$(sink_named "$HDMI_MATCH")
+  analog=$(sink_named "$ANALOG_MATCH")
+  if [ -n "$hdmi" ]; then
+    want=$hdmi
+  elif [ -n "$analog" ]; then
+    want=$analog
+  else
+    return 0            # no sinks at all; nothing sensible to do
+  fi
+
+  now=$(pactl get-default-sink 2>/dev/null)
+  [ "$now" = "$want" ] && return 0
+
+  pactl set-default-sink "$want" 2>/dev/null || return 0
+  move_streams "$want"
+  log "default sink -> $want (was $now)"
+}
+
+# React to a burst of events once, rather than once per event.
+watch() {
+  pactl subscribe 2>/dev/null | while read -r event; do
+    case "$event" in
+      *"on sink"*|*"on server"*|*"on card"*) ;;
+      *) continue ;;
+    esac
+    sleep "$SETTLE"
+    apply
+  done
+}
+
+case "${1:-watch}" in
+  once)   apply ;;
+  status)
+    echo "default sink: $(pactl get-default-sink 2>/dev/null)"
+    echo "hdmi sink:    $(sink_named "$HDMI_MATCH" || echo "not present")"
+    echo "analog sink:  $(sink_named "$ANALOG_MATCH")"
+    ;;
+  watch)  apply; watch ;;
+  *)      echo "usage: hdmi-audio-follow [watch|once|status]" >&2; exit 1 ;;
+esac

@@ -46,6 +46,49 @@ Checkup found gets fixed, it adds an entry to the [Fix log](#fix-log) at the bot
 
 ---
 
+## Set up this laptop: the guide's steps
+
+Every setup section of the full guide is a step in `steps/msi-gf75/`: a test that says whether it's done,
+and the commands that do it. **Set up this laptop** runs every step that isn't done, with one password
+prompt; steps already done are skipped. A file changed on this laptop is never overwritten: Checkup
+offers to save that version to the repo instead, with usernames, drive IDs and the home network
+replaced by placeholders. Optional steps start unticked; `checkup-cli apply --optional` includes them.
+
+Not automated, because they happen outside CachyOS or inside another app: the installer itself (sections 1–2), the BIOS settings, Steam and Heroic settings inside the apps, adding the Game GPU widget to the panel, Waywallen's own settings, MControlCenter (only if the msi-ec driver recognises the laptop), the lib32-v4l-utils workaround, and Secure Boot's Setup Mode and key enrolment (section 9).
+Checkup still tests the ones it can and says what to do.
+
+| Step | Guide section | How |
+|---|---|---|
+| First-boot checks: multilib, firewall, snapshots, fish | 2. Installing CachyOS | automatic |
+| The computer has its own name | 2. Installing CachyOS | you do it; Checkup checks |
+| Control this laptop from another computer over SSH | Optional: control this laptop from another computer over SSH | optional (unticked) |
+| Run apps on the GTX 1650 (switcheroo-control, prime-run) | Set up switcheroo-control ("Run using dedicated graphics card") | automatic |
+| Built-in mic: fan noise removed | Mic: remove fan noise | automatic |
+| Bluetooth calls without static (mSBC off) | Headsets (Bluetooth earbuds, USB, laptop jacks) | automatic |
+| Bigger audio buffer for every app (no hiccups in games) | Audio buffer for every app (stops hiccups) | automatic |
+| NTFS flash drives: repair tools and fallback driver | NTFS flash drives (read and write) | automatic |
+| Fans, Cooler Boost and battery limit (MControlCenter) | Fans, power modes, battery (MSI Center replacement) | you do it; Checkup checks — only when [ -d /sys/devices/platform/msi-ec ] |
+| Gaming stack: Steam, Heroic, Lutris, MangoHud, proton-cachyos, GE-Proton | 4. Gaming | automatic |
+| Bigger NVIDIA shader cache | 4. Gaming | automatic |
+| Game GPU switcher (Meta+Alt+G: auto, Intel, NVIDIA) | Pick the GPU per game (Game GPU switcher) | automatic |
+| Game GPU widget for the panel | Pick the GPU per game (Game GPU switcher) | automatic |
+| Heroic games follow the Game GPU mode | Pick the GPU per game (Game GPU switcher) | automatic — only when [ -e ~/.config/heroic/config.json ] |
+| msi-session: headset switching, call mode, weekly update reminder | 7. Background service and weekly updates | automatic |
+| Waywallen live wallpapers | 6. Waywallen live wallpapers (KDE Plasma) | optional (unticked) |
+| Hardware video decoding and recording on the Intel GPU | Hardware video on the Intel GPU | automatic |
+| Firmware updates (fwupd) | Firmware updates | automatic |
+| Kup backups | Backups of your files | automatic |
+| Printing and scanning | Printing and scanning | automatic |
+| Microsoft fonts for Office documents | Microsoft fonts | automatic |
+| OneDrive as a folder (rclone) | OneDrive (if you use it) | optional (unticked) |
+| Hibernation (16 GiB swapfile, resume from it) | 10. Hibernation | automatic |
+| Limine re-signs itself after every snapshot (Secure Boot) | 9. Secure Boot (do this last) | automatic — only when pacman -Q sbctl |
+| Secure Boot is on | 9. Secure Boot (do this last) | you do it; Checkup checks |
+| Everyday apps: LibreOffice, Discord, Spotify | 12. Everyday apps | automatic |
+| Google Chrome | Chrome | automatic |
+| OnlyOffice (for documents that must look exactly like Word) | Word processor | optional (unticked) |
+| KNotes sticky notes in their own window | Sticky notes | optional (unticked) |
+
 ## Updates and packages
 
 <a id="reading-an-update-list"></a>
