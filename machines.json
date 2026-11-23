@@ -45,6 +45,7 @@
       "reboot",
       "kernel",
       "speakers",
+      "legion-services",
       "nvidia",
       "secure-boot",
       "terminal",
@@ -60,6 +61,7 @@
     "health": [
       "nvidia",
       "speakers",
+      "legion-services",
       "wifi",
       "camera",
       "webcam-service"

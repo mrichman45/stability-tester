@@ -1,0 +1,140 @@
+#!/bin/sh
+# legion-power battery|ac|status - device power tunables that only matter unplugged.
+#
+# Called by legion-system when the charger goes in or out. Everything here trades a
+# little wake-up latency for power, so it is applied on battery and reverted on AC.
+#
+# Deliberately NOT touched: energy_performance_preference, energy_perf_bias and
+# min_perf_pct. powertop suggests those, but power-profiles-daemon owns EPP and
+# legion-system drives it from Fn+Q - writing EPP here would fight both. (powertop's
+# min_perf_pct suggestion would also raise idle power, not lower it.)
+#
+# Why this exists: cores reach CC7 ~96% of the time, but the package never gets past
+# PC3 (PC6-PC10 sit at 0%), so the uncore, memory controller and IO fabric stay
+# energised. The deep package states are blocked by two things nothing here can fix -
+# the FADT declares no PCIe ASPM support, and the panel has no PSR. These tunables
+# shave what is left around that floor.
+
+PCI_RPM=yes      # runtime PM for PCI devices (the big one)
+NVME_RPM=no      # runtime PM for the NVMe controllers. OFF by default: the root
+                 # filesystem lives on one of them, and some Samsung drives have
+                 # misbehaved with D3 on some kernels. Test it before trusting it.
+AUDIO_PS=yes     # power down the HD-audio codec when idle. Set to no if you hear a
+                 # pop or a clipped first syllable when sound starts on battery.
+USB_RPM=no       # autosuspend USB devices. OFF by default: this reaches the keyboard
+                 # and RGB controller, where it can cost you the first keypress.
+WRITEBACK=yes    # batch dirty-page writeback on battery, so the SSD wakes less often
+
+# User services to stop on battery and start again on AC. nvstats polls nvidia-smi
+# once a second to keep the GPU widget smooth; each poll wakes the RTX out of D3cold,
+# and measured on this laptop that costs about 18 W - more than everything else here
+# put together. On battery the dGPU is idle anyway, so its telemetry is worth nothing.
+DESKTOP_USER=__USER__
+USER_UNITS="nvstats.service"
+
+SKIP_DRIVERS="nvidia nvidia_drm"   # the NVIDIA driver manages its own runtime D3
+
+SYS="${SYS_ROOT:-}/sys"
+AC_WRITEBACK=500      # kernel default, centiseconds
+BAT_WRITEBACK=1500
+
+log() { [ -n "$QUIET" ] || echo "$*"; }
+
+put() {  # write $2 to $1 only if it exists and differs; refused writes are ignored
+  [ -w "$1" ] || return 0
+  [ "$(cat "$1" 2>/dev/null)" = "$2" ] && return 0
+  { echo "$2" > "$1"; } 2>/dev/null || true
+}
+
+driver_of() {  # the driver bound to a device directory, or empty
+  [ -L "$1/driver" ] || return 0
+  basename "$(readlink -f "$1/driver")"
+}
+
+is_nvme() {
+  [ "$(driver_of "$1")" = nvme ]
+}
+
+skipped() {
+  drv=$(driver_of "$1")
+  [ -n "$drv" ] || return 1
+  for s in $SKIP_DRIVERS; do
+    [ "$drv" = "$s" ] && return 0
+  done
+  return 1
+}
+
+pci_rpm() {  # $1 = auto | on
+  [ "$PCI_RPM" = yes ] || return 0
+  n=0
+  for d in "$SYS"/bus/pci/devices/*; do
+    [ -e "$d/power/control" ] || continue
+    skipped "$d" && continue
+    if is_nvme "$d" && [ "$NVME_RPM" != yes ]; then continue; fi
+    put "$d/power/control" "$1"
+    n=$((n + 1))
+  done
+  log "pci runtime pm: $1 ($n devices)"
+}
+
+usb_rpm() {  # $1 = auto | on
+  [ "$USB_RPM" = yes ] || return 0
+  for d in "$SYS"/bus/usb/devices/*; do
+    [ -e "$d/power/control" ] || continue
+    put "$d/power/control" "$1"
+  done
+  log "usb autosuspend: $1"
+}
+
+audio_ps() {  # $1 = 1 | 0
+  [ "$AUDIO_PS" = yes ] || return 0
+  put "$SYS/module/snd_hda_intel/parameters/power_save" "$1"
+  if [ "$1" = 1 ]; then ctl=Y; else ctl=N; fi
+  put "$SYS/module/snd_hda_intel/parameters/power_save_controller" "$ctl"
+  log "audio codec power save: $1"
+}
+
+writeback() {  # $1 = centiseconds
+  [ "$WRITEBACK" = yes ] || return 0
+  put "${SYS_ROOT:-}/proc/sys/vm/dirty_writeback_centisecs" "$1"
+}
+
+user_units() {  # $1 = stop | start
+  [ -n "$USER_UNITS" ] && [ -n "$DESKTOP_USER" ] || return 0
+  [ -x /usr/bin/systemctl ] || return 0
+  for u in $USER_UNITS; do
+    /usr/bin/systemctl --user -M "$DESKTOP_USER@.host" "$1" "$u" 2>/dev/null &&
+      log "user unit $u: $1"
+  done
+}
+
+status() {
+  auto=0; on=0
+  for d in "$SYS"/bus/pci/devices/*; do
+    [ -e "$d/power/control" ] || continue
+    case "$(cat "$d/power/control" 2>/dev/null)" in
+      auto) auto=$((auto + 1)) ;;
+      on)   on=$((on + 1)) ;;
+    esac
+  done
+  echo "PCI runtime pm:  $auto auto, $on on"
+  echo "Audio power_save: $(cat "$SYS/module/snd_hda_intel/parameters/power_save" 2>/dev/null || echo n/a)"
+  echo "Writeback:        $(cat "${SYS_ROOT:-}/proc/sys/vm/dirty_writeback_centisecs" 2>/dev/null) centisecs"
+  echo "NVMe runtime pm:  $([ "$NVME_RPM" = yes ] && echo enabled || echo "left alone (NVME_RPM=no)")"
+  for d in "$SYS"/bus/pci/devices/*; do
+    is_nvme "$d" || continue
+    echo "  $(basename "$d"): $(cat "$d/power/control" 2>/dev/null)"
+  done
+  echo "dGPU runtime:     $(cat "$SYS/bus/pci/devices/0000:01:00.0/power/runtime_status" 2>/dev/null)"
+  for u in $USER_UNITS; do
+    echo "  $u: $(/usr/bin/systemctl --user -M "$DESKTOP_USER@.host" is-active "$u" 2>/dev/null)"
+  done
+  echo "Package C-states: cat /sys/kernel/debug/pmc_core/package_cstate_show (needs root)"
+}
+
+case "${1:-}" in
+  battery) pci_rpm auto; usb_rpm auto; audio_ps 1; writeback "$BAT_WRITEBACK"; user_units stop ;;
+  ac)      pci_rpm on;   usb_rpm on;   audio_ps 0; writeback "$AC_WRITEBACK";  user_units start ;;
+  status)  status ;;
+  *)       echo "usage: legion-power battery|ac|status" >&2; exit 1 ;;
+esac

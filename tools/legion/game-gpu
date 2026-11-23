@@ -1,0 +1,18 @@
+#!/bin/sh
+# game-gpu CMD...: the app's window stays on the Intel GPU (OpenGL); on the charger, its Vulkan
+# rendering (the game) goes to the RTX. On battery, or gpu-mode intel, it's all Intel.
+# Decided when the app starts. Works for Flatpak commands (flatpak run ...) too.
+gpu=$("$HOME/.local/bin/gpu-run" --which)
+is_flatpak=no
+case "$1" in flatpak|*/flatpak) [ "$2" = run ] && is_flatpak=yes ;; esac
+if [ "$gpu" = nvidia ]; then
+  unset VK_ICD_FILENAMES VK_DRIVER_FILES DRI_PRIME MESA_VK_DEVICE_SELECT VK_LOADER_DRIVERS_SELECT DXVK_FILTER_DEVICE_NAME VKD3D_FILTER_DEVICE_NAME
+  if [ "$is_flatpak" = yes ]; then
+    fp=$1; shift 2
+    exec "$fp" run --env=__NV_PRIME_RENDER_OFFLOAD=1 --env=__VK_LAYER_NV_optimus=NVIDIA_only "$@"
+  fi
+  export __NV_PRIME_RENDER_OFFLOAD=1 __VK_LAYER_NV_optimus=NVIDIA_only
+  exec "$@"
+fi
+[ "$is_flatpak" = yes ] && exec "$@"
+exec "$HOME/.local/bin/intel-run" "$@"

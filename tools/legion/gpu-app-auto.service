@@ -1,0 +1,10 @@
+[Unit]
+Description=Start games and emulators with their window on Intel and games on the RTX
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 3
+ExecStart=%h/.local/bin/gpu-app --auto
+
+[Install]
+WantedBy=default.target

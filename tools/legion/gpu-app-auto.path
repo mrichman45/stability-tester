@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for games and emulators being installed, updated or removed
+
+[Path]
+PathChanged=/usr/share/applications
+PathChanged=/var/lib/flatpak/exports/share/applications
+PathChanged=%h/.local/share/flatpak/exports/share/applications
+
+[Install]
+WantedBy=default.target

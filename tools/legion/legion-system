@@ -1,0 +1,188 @@
+#!/bin/sh
+# legion-system: one root background service for the Legion Pro 7
+#   1. wakes the RTX in Dynamic Graphics mode, at boot and after sleep
+#   2. matches CPU speed and fans to the Fn+Q power mode:
+#        quiet (low-power) -> turbo off, QUIET_CAP,    stock fans
+#        balanced          -> turbo on,  BALANCED_CAP, stock fans (the balanced curve from legiond)
+#        performance       -> turbo on,  full speed,   fans unlocked, following the fan curve
+#        custom            -> turbo on,  full speed,   fans unlocked, following the fan curve
+#   3. tells power-profiles-daemon the same mode, so EPP follows Fn+Q:
+#        quiet -> power-saver, balanced -> balanced, performance and custom -> performance on
+#        the charger, balanced on battery. Fn+Q writes platform_profile down in firmware and the
+#        daemon does not watch that file, so without this EPP sits wherever the daemon left it.
+#        This is what replaces per-game "game-performance %command%" launch options.
+#   4. runs nvidia-powerd only on the charger. Dynamic Boost shifts power between CPU and GPU
+#        under load, which is worth a few percent while gaming plugged in; on battery it does
+#        nothing useful and holds /dev/nvidia0 open, which blocks the dGPU's runtime D3 sleep.
+#        nvidia-powerd must be disabled in systemd so this is the only thing starting it.
+#   5. hands the charger state to legion-power, which applies device runtime PM and the other
+#        powertop tunables on battery and reverts them on AC. See that script for what it
+#        touches and, just as importantly, what it refuses to touch (EPP stays with item 3).
+QUIET_CAP=2200000      # kHz (2.2 GHz)
+BALANCED_CAP=3800000   # kHz (3.8 GHz)
+DGPU_WAKE=yes          # no = skip the RTX wake (e.g. BIOS set to Discrete)
+WAKE_ALWAYS=no         # yes = wake the RTX at startup even when it is already on the bus
+FAN_CONTROL=yes        # no = leave the fans to the firmware and legiond
+PERF_FULLSPEED=no      # yes = performance runs the fans at full speed all the time
+SYNC_PROFILE=yes       # no = leave power-profiles-daemon alone (back to launch options)
+POWERD_ON_AC=yes       # no = leave nvidia-powerd to systemd (re-enable the unit if you set this)
+TUNABLES=yes           # no = skip legion-power (device runtime PM etc. on battery)
+SETTLE=1               # seconds to wait after a mode change for the firmware to finish switching
+RETRIES=5              # quick re-tries (every 2 s) when the firmware refuses a turbo change
+
+SYS="${SYS_ROOT:-}/sys"
+PROFILE="$SYS/firmware/acpi/platform_profile"
+NO_TURBO="$SYS/devices/system/cpu/intel_pstate/no_turbo"
+PPCTL=/usr/bin/powerprofilesctl
+SYSTEMCTL=/usr/bin/systemctl
+LEGION_POWER=/usr/local/bin/legion-power
+DGPU=0000:01:00.0      # the RTX, for the "is it already there?" check
+LEG=""                 # the sysfs folder for the Legion module, found at startup
+
+# stdout goes straight to the journal under this service (logger lines could lose the unit tag)
+log() { echo "$*"; }
+
+find_legion() {  # the folder is "legion" on some kernels, "PNP0C09:00" on others (6.18 LTS)
+  for d in "$SYS/devices/platform/legion" "$SYS"/bus/platform/drivers/legion/*; do
+    [ -e "$d/notify_dgpu" ] && { LEG=$d; return 0; }
+  done
+  return 1
+}
+
+wait_legion() {  # up to 10 s for the module at boot
+  i=0
+  while ! find_legion && [ "$i" -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
+  if [ -n "$LEG" ]; then log "Legion module at $LEG"
+  else log "Legion module not loaded; RTX wake and fan control skipped"; fi
+}
+
+on_ac() {  # 0 = on the charger, 1 = on battery; no battery reported counts as the charger
+  for f in "$SYS"/class/power_supply/A*/online; do
+    [ -e "$f" ] || continue
+    if [ "$(cat "$f" 2>/dev/null)" = 1 ]; then return 0; else return 1; fi
+  done
+  return 0
+}
+
+wake_dgpu() {
+  [ "$DGPU_WAKE" = yes ] && [ -n "$LEG" ] || return 0
+  { echo 1 > "$LEG/notify_dgpu"; } 2>/dev/null; sleep 1
+  { echo 1 > "$SYS/bus/pci/rescan"; } 2>/dev/null
+  log "RTX wake sent"
+}
+
+wake_dgpu_if_needed() {  # startup only: poking the EC wakes the card out of D3cold, so
+  # do it only when the card is actually missing (Dynamic Graphics mode at boot). After a
+  # resume the caller uses wake_dgpu directly, because the card can be listed but not yet
+  # usable. Waking a card that is already present costs ~18 W of sleep until it settles.
+  [ "$DGPU_WAKE" = yes ] || return 0
+  if [ "$WAKE_ALWAYS" != yes ] && [ -e "$SYS/bus/pci/devices/$DGPU" ]; then
+    log "RTX already on the bus; wake not needed"
+    return 0
+  fi
+  wake_dgpu
+}
+
+put() {  # write $2 to file $1 only if it exists and differs; a refused write is ignored
+  [ -e "$1" ] || return 0
+  [ "$(cat "$1" 2>/dev/null)" = "$2" ] || { echo "$2" > "$1"; } 2>/dev/null || true
+}
+
+set_fans() {  # $1 = unlock (0/1), $2 = full speed (0/1)
+  [ "$FAN_CONTROL" = yes ] && [ -n "$LEG" ] || return 0
+  put "$LEG/fan_unlock" "$1"
+  put "$LEG/fan_fullspeed" "$2"
+}
+
+sync_profile() {  # $1 = Fn+Q mode; the daemon owns EPP, so ask it rather than writing EPP here
+  [ "$SYNC_PROFILE" = yes ] && [ -x "$PPCTL" ] || return 0
+  case "$1" in
+    quiet|low-power) want=power-saver ;;
+    balanced)        want=balanced ;;
+    *)               if on_ac; then want=performance; else want=balanced; fi ;;
+  esac
+  was=$("$PPCTL" get 2>/dev/null)
+  [ "$was" = "$want" ] && return 0
+  "$PPCTL" set "$want" 2>/dev/null && log "power profile=$want (was $was)"
+}
+
+have_powerd() {  # the unit exists (the nvidia-utils package installs it)
+  [ -e /usr/lib/systemd/system/nvidia-powerd.service ] ||
+  [ -e /etc/systemd/system/nvidia-powerd.service ]
+}
+
+sync_powerd() {  # Dynamic Boost on the charger only; on battery it just holds the dGPU awake
+  [ "$POWERD_ON_AC" = yes ] && [ -x "$SYSTEMCTL" ] && have_powerd || return 0
+  if on_ac; then want=start; else want=stop; fi
+  state=$("$SYSTEMCTL" is-active nvidia-powerd 2>/dev/null)
+  case "$want:$state" in
+    start:active|start:activating) return 0 ;;
+    stop:inactive|stop:failed)     return 0 ;;
+  esac
+  "$SYSTEMCTL" --no-block "$want" nvidia-powerd 2>/dev/null &&
+    log "nvidia-powerd $want (was $state)"
+}
+
+sync_tunables() {  # device power tunables that only matter unplugged; see legion-power
+  [ "$TUNABLES" = yes ] && [ -x "$LEGION_POWER" ] || return 0
+  if on_ac; then want=ac; else want=battery; fi
+  [ "$want" = "$lasttune" ] && return 0
+  QUIET=1 "$LEGION_POWER" "$want" && { lasttune=$want; log "tunables=$want"; }
+}
+
+apply_mode() {  # returns 1 if the firmware refused the turbo setting (caller retries soon)
+  case "$1" in
+    quiet|low-power) turbo_off=1; cap=$QUIET_CAP;    set_fans 0 0 ;;
+    balanced)        turbo_off=0; cap=$BALANCED_CAP; set_fans 0 0 ;;
+    performance)     turbo_off=0; cap=0
+                     if [ "$PERF_FULLSPEED" = yes ]; then set_fans 1 1; else set_fans 1 0; fi ;;
+    *)               turbo_off=0; cap=0;             set_fans 1 0 ;;
+  esac
+  sync_profile "$1"
+  sync_powerd
+  sync_tunables
+  put "$NO_TURBO" "$turbo_off"
+  for f in "$SYS"/devices/system/cpu/cpu*/cpufreq; do
+    [ -e "$f/cpuinfo_max_freq" ] || continue
+    max=$(cat "$f/cpuinfo_max_freq")
+    if [ "$cap" -eq 0 ] || [ "$cap" -gt "$max" ]; then v=$max; else v=$cap; fi
+    put "$f/scaling_max_freq" "$v"
+  done
+  [ ! -e "$NO_TURBO" ] || [ "$(cat "$NO_TURBO" 2>/dev/null)" = "$turbo_off" ]
+}
+
+wait_legion
+wake_dgpu_if_needed
+lasttune=""
+cur=$(cat "$PROFILE" 2>/dev/null); apply_mode "$cur"; last=$cur
+if on_ac; then lastac=ac; else lastac=battery; fi
+log "started: mode=$cur power=$lastac"
+[ -n "$NOTIFY_SOCKET" ] && systemd-notify --ready   # lets the login screen start after the RTX wake
+[ -n "$ONCE" ] && exit 0
+
+n=0; retry=0; t0=$(date +%s)
+while true; do
+  sleep 2
+  t1=$(date +%s)
+  if [ $((t1 - t0)) -gt 20 ]; then           # clock jumped: the laptop just woke from sleep
+    log "resume detected"; [ -n "$LEG" ] || find_legion; wake_dgpu; last=""; lastac=""; lasttune=""
+  fi
+  t0=$t1
+  cur=$(cat "$PROFILE" 2>/dev/null); n=$((n + 1))
+  if on_ac; then ac=ac; else ac=battery; fi
+  if [ "$cur" != "$last" ] || [ "$ac" != "$lastac" ]; then   # firmware finishes switching, re-read
+    sleep "$SETTLE"; cur=$(cat "$PROFILE" 2>/dev/null)
+  fi
+  if [ "$cur" != "$last" ] || [ "$ac" != "$lastac" ] || [ "$n" -ge 15 ] || [ "$retry" -gt 0 ]; then
+    [ "$cur" != "$last" ] && log "mode=$cur"
+    [ "$ac" != "$lastac" ] && [ -n "$lastac" ] && log "power=$ac"
+    if apply_mode "$cur"; then
+      retry=0
+    elif [ "$retry" -lt "$RETRIES" ]; then
+      retry=$((retry + 1))
+    else
+      log "turbo change refused by firmware; falling back to the 30 s re-check"; retry=0
+    fi
+    last=$cur; lastac=$ac; n=0
+  fi
+done

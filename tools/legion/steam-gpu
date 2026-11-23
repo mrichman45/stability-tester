@@ -1,0 +1,14 @@
+#!/bin/sh
+# Steam's own window (OpenGL) always stays on the Intel GPU. On the charger, Vulkan games
+# (Proton/DXVK/VKD3D, native Vulkan) go to the RTX; on battery, everything is Intel.
+# steam-power-watch restarts Steam when the charger is plugged in or out.
+if pgrep -x steam >/dev/null; then
+  exec /usr/bin/steam "$@"      # already running: hand the request (e.g. a store link) to it
+fi
+gpu=$("$HOME/.local/bin/gpu-run" --which)
+echo "$gpu" > "$HOME/.config/gpu-mode-steam"
+if [ "$gpu" = nvidia ]; then
+  export __NV_PRIME_RENDER_OFFLOAD=1 __VK_LAYER_NV_optimus=NVIDIA_only
+  exec /usr/bin/steam "$@"
+fi
+exec "$HOME/.local/bin/intel-run" /usr/bin/steam "$@"

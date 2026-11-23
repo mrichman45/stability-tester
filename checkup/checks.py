@@ -600,6 +600,127 @@ def c_speakers(ctx):
                   Fix("Installed the Legion speaker fix (tas2781-fix)", fix, after="Restart, then test the speakers."))
 
 
+# ---------------------------------------------------------------- custom Legion services
+
+LEGION_BUNDLE = "tools/legion"
+TEST_ROOT = os.environ.get("CHECKUP_TEST_ROOT", "")   # tests only: where "/" files live
+
+
+def _bundle_dir():
+    for base in (repo_dir(), Path("/usr/share/checkup"), Path(__file__).resolve().parent.parent):
+        if (base / LEGION_BUNDLE / "manifest.json").exists():
+            return base / LEGION_BUNDLE
+    return None
+
+
+def _dest(path):
+    if path.startswith("~/"):
+        return HOME / path[2:]
+    return Path(TEST_ROOT + path)
+
+
+def _ntfs_uuid(ctx):
+    return windows_partition(ctx) or ""
+
+
+def _render(text, ctx):
+    """Repo copy -> what belongs on this laptop (fill in the placeholders)."""
+    return text.replace("__USER__", USER).replace("__NTFS_UUID__", _ntfs_uuid(ctx))
+
+
+def _scrub(text, ctx):
+    """Laptop copy -> what goes in the public repo (personal details back to placeholders)."""
+    text = re.sub(r"^DESKTOP_USER=.*$", "DESKTOP_USER=__USER__", text, flags=re.M)
+    return re.sub(r'^UUID="[0-9A-Fa-f-]+"', 'UUID="__NTFS_UUID__"', text, flags=re.M)
+
+
+def legion_bundle_state(ctx):
+    """[(entry, state)] with state ok | missing | changed (edited on this laptop)."""
+    bundle = _bundle_dir()
+    if not bundle:
+        return None, []
+    manifest = json.loads((bundle / "manifest.json").read_text())
+    out = []
+    for e in manifest["files"]:
+        dest = _dest(e["dest"])
+        if not dest.exists():
+            out.append((e, "missing"))
+            continue
+        repo = (bundle / e["src"]).read_text()
+        here = read(dest)
+        out.append((e, "ok" if _scrub(here, ctx) == _scrub(repo, ctx) else "changed"))
+    return manifest, out
+
+
+def c_legion_services(ctx):
+    if not ctx.expects("legion-services"):
+        return None
+    manifest, files = legion_bundle_state(ctx)
+    if manifest is None:
+        return Result(SKIP, "The Legion services bundle isn't available (update ~/.local/src/stability-tester).")
+    bundle = _bundle_dir()
+    missing = [e for e, s in files if s == "missing"]
+    changed = [e for e, s in files if s == "changed"]
+    units_off = [u for u in manifest["enable"]
+                 if Path(f"/usr/lib/systemd/system/{u}").exists() or Path(f"/etc/systemd/system/{u}").exists()
+                 if unit_state(u)[0] != "enabled"]
+    units_on = [u for u in manifest["disable"] if unit_state(u)[0] == "enabled"]
+    user_off = [u for u in manifest["enable_user"] if unit_state(u, user=True)[0] != "enabled"]
+    pkgs = [p for p in manifest["packages"] if not pkg_version(p)]
+
+    if missing or units_off or units_on or user_off or pkgs:
+        stage = HOME / ".cache/checkup/legion"
+        script, problems = [], []
+        if pkgs:
+            problems.append("missing packages: " + ", ".join(pkgs))
+            script.append("sudo pacman -S --needed " + " ".join(pkgs))
+        if missing:
+            problems.append("not installed: " + ", ".join(Path(e["dest"]).name for e in missing))
+            for e in missing:
+                src = shell_quote(stage / e["src"])
+                dest = e["dest"]
+                if e.get("root"):
+                    script.append(f"sudo install -Dm{e['mode']} {src} {shell_quote(dest)}")
+                else:
+                    script.append(f"install -Dm{e['mode']} {src} {shell_quote(_dest(dest))}")
+            script.append("sudo systemctl daemon-reload")
+            script += [e["after"] for e in missing if e.get("after")]
+        if units_off:
+            problems.append("services off: " + ", ".join(units_off))
+        if units_on:
+            problems.append("should be off: " + ", ".join(units_on))
+        script += [f"sudo systemctl enable --now {u}" for u in units_off]
+        script += [f"sudo systemctl disable --now {u}" for u in units_on]
+        if user_off:
+            problems.append("your services off: " + ", ".join(user_off))
+            script += ["systemctl --user daemon-reload"] + [f"systemctl --user enable --now {u}" for u in user_off]
+
+        def stage_files():
+            stage.mkdir(parents=True, exist_ok=True)
+            for e in missing:
+                (stage / e["src"]).write_text(_render((bundle / e["src"]).read_text(), ctx))
+            return f"Prepared {len(missing)} files (your username and drive filled in)."
+
+        note = f" {len(changed)} other file(s) were edited on this laptop and are left alone." if changed else ""
+        return Result(FAIL, _cap("; ".join(problems)) + "." + note,
+                      Fix("Restored the custom Legion services", script, python=stage_files if missing else None,
+                          after="Restart so the power and audio services start cleanly."))
+
+    if changed:
+        names = ", ".join(Path(e["dest"]).name for e in changed)
+
+        def save_to_repo():
+            for e in changed:
+                (bundle / e["src"]).write_text(_scrub(read(_dest(e["dest"])), ctx))
+            return f"Saved {len(changed)} file(s) into {bundle}. Press Sync with GitHub to share them."
+
+        return Result(WARN, f"Edited on this laptop since the repo copy: {names}. "
+                            "Save them to the repo so a reinstall gets these versions.",
+                      Fix("Saved this laptop's Legion services to the repo", [], python=save_to_repo,
+                          preview="Personal details (your username, drive ID) are replaced with placeholders before saving."))
+    return Result(OK, f"All {len(files)} custom Legion files are installed, match the repo, and their services are on.")
+
+
 def c_dns(ctx):
     times = []
     for host in ("archlinux.org", "wikipedia.org", "github.com"):
@@ -639,6 +760,7 @@ CHECKS = [
     Check("nordvpn", "NordVPN ready", "nordvpn", c_nordvpn),
     Check("er-save-manager", "Elden Ring Save Manager updates itself", "elden-ring", c_er_save_manager),
     Check("speakers", "Speaker fix installed", "speakers", c_speakers),
+    Check("legion-services", "Legion services (power, audio, GPU)", "legion-services", c_legion_services),
     Check("extras", "Apps and settings found on this laptop", "also-set-up-on-this-laptop-found-by-checkup", c_extras),
     Check("dns", "Internet name lookups", "dns", c_dns),
 ]

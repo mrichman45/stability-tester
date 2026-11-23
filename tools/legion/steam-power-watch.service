@@ -1,0 +1,11 @@
+[Unit]
+Description=Restart Steam on the right GPU when the charger is plugged in or out
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/steam-power-watch
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

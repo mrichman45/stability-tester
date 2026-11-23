@@ -1,0 +1,61 @@
+#!/bin/sh
+# gpu-app NAME          make the menu entry NAME(.desktop) start through game-gpu
+# gpu-app --auto        do that for every game and emulator menu entry (run by gpu-app-auto.path)
+# gpu-app --find WORD   show menu entries whose file name contains WORD
+# gpu-app --list        show entries set up this way
+# gpu-app --remove NAME undo it, and keep --auto from setting it up again
+dir="$HOME/.local/share/applications"
+dirs="$HOME/.local/share/flatpak/exports/share/applications /var/lib/flatpak/exports/share/applications /usr/share/applications"
+skip="$HOME/.config/gpu-app-skip"
+refresh() { update-desktop-database "$dir" 2>/dev/null; kbuildsycoca6 >/dev/null 2>&1; }
+wrap() {  # $1 = the app's own menu entry, $2 = name
+  sed -E -e "s|^Exec=|Exec=$HOME/.local/bin/game-gpu |" -e '/^TryExec=/d' -e 's|^DBusActivatable=.*|DBusActivatable=false|' "$1" > "$dir/$2.desktop"
+  printf 'X-GPU-App=%s\n' "$1" >> "$dir/$2.desktop"
+}
+mkdir -p "$dir"
+case "$1" in
+  --find)
+    for d in $dirs; do ls "$d" 2>/dev/null | grep -i "$2"; done | sort -u; exit 0 ;;
+  --list)
+    grep -l '^X-GPU-App=' "$dir"/*.desktop 2>/dev/null | xargs -r -n1 basename | sed 's/\.desktop$//'; exit 0 ;;
+  --remove)
+    n=${2%.desktop}; rm -f "$dir/$n.desktop"
+    grep -qx "$n" "$skip" 2>/dev/null || echo "$n" >> "$skip"
+    refresh; echo "Removed $n; --auto will leave it alone."; exit 0 ;;
+  --auto)
+    new=""; seen=""
+    for d in $dirs; do
+      for f in "$d"/*.desktop; do
+        [ -f "$f" ] || continue
+        n=$(basename "$f" .desktop)
+        case " $seen " in *" $n "*) continue ;; esac; seen="$seen $n"
+        case "$n" in *[Ss]team*) continue ;; esac
+        grep -qE '^Categories=.*(Game|Emulator)' "$f" || continue
+        grep -q '^NoDisplay=true' "$f" && continue
+        grep -qx "$n" "$skip" 2>/dev/null && continue
+        t="$dir/$n.desktop"
+        if [ -e "$t" ]; then
+          grep -q '^X-GPU-App=' "$t" || continue     # your own entry: leave it alone
+          [ "$f" -nt "$t" ] || continue              # already up to date
+        else
+          new="$new $(sed -n 's/^Name=//p' "$f" | head -1),"
+        fi
+        wrap "$f" "$n"
+      done
+    done
+    for t in "$dir"/*.desktop; do                    # apps that were uninstalled
+      s=$(sed -n 's/^X-GPU-App=//p' "$t" 2>/dev/null | head -1)
+      [ -n "$s" ] && [ ! -e "$s" ] && rm -f "$t"
+    done
+    refresh
+    [ -n "$new" ] && notify-send -a "GPU apps" -i applications-games "Games use the RTX on the charger" "Set up:${new%,}"
+    exit 0 ;;
+  ""|-*)
+    sed -n '2,6s/^# //p' "$0"; exit 1 ;;
+esac
+name=${1%.desktop}; src=""
+for d in $dirs; do [ -f "$d/$name.desktop" ] && { src="$d/$name.desktop"; break; }; done
+[ -n "$src" ] || { echo "No menu entry $name.desktop found. Try: gpu-app --find <word>"; exit 1; }
+[ -f "$skip" ] && sed -i "/^$name\$/d" "$skip"
+wrap "$src" "$name"; refresh
+echo "$name now starts with its window on Intel and games on the RTX (on the charger)."

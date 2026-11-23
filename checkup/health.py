@@ -158,6 +158,20 @@ def h_speakers(ctx):
                   Fix("Re-ran the speaker fix", ["systemctl --user restart tas2781-fix.service"]))
 
 
+def h_legion_services(ctx):
+    _, a = unit_state("legion-system.service")
+    _, b = unit_state("legion-session.service", user=True)
+    if a == "unknown" and b == "unknown":
+        return None
+    down = [n for n, s in (("legion-system", a), ("legion-session", b)) if s != "active"]
+    if not down:
+        return Result(OK, "legion-system and legion-session are running.")
+    script = (["sudo systemctl restart legion-system.service"] if "legion-system" in down else []) + \
+             (["systemctl --user restart legion-session.service"] if "legion-session" in down else [])
+    return Result(FAIL, f"Not running: {', '.join(down)} (power modes, RTX wake or headset switching may not work).",
+                  Fix("Restarted the Legion services", script))
+
+
 def h_wifi(ctx):
     if not which("nmcli"):
         return None
@@ -174,6 +188,7 @@ def h_wifi(ctx):
 HEALTH = [
     Check("nvidia", "NVIDIA graphics work", "nvidia-mismatch", h_nvidia),
     Check("wifi", "Wi-Fi works", "dns", h_wifi),
+    Check("legion-services", "Legion power and audio services running", "legion-services", h_legion_services),
     Check("speakers", "Speakers work (amplifier fix ran)", "speakers", h_speakers),
     Check("docker", "Docker runs containers", "docker", h_docker),
     Check("vlc", "VLC plays h264", "vlc", h_vlc),

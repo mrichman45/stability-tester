@@ -182,6 +182,35 @@ Then restart.
 
 ---
 
+## Custom Legion services (power, audio, GPU)
+
+These are the services written for this laptop. The files live in `tools/legion/` in this repo, with
+`__USER__` and `__NTFS_UUID__` as placeholders; Checkup fills those in when it installs them and puts the
+placeholders back when it saves your edits to the repo. **Set up this laptop** installs all of them;
+the *Legion services* check reports anything missing, switched off or edited since the repo copy.
+
+| File | Where it goes | What it does |
+|---|---|---|
+| `legion-system` + `legion-system.service` | `/usr/local/bin`, `/etc/systemd/system` | Root service: wakes the RTX, sets CPU speed caps and fans per Fn+Q mode, keeps power-profiles-daemon in step, runs nvidia-powerd only on the charger, then calls legion-power |
+| `legion-power` | `/usr/local/bin` | Battery vs charger tuning; stops GPU-polling user services (nvstats) on battery |
+| `10-modprobe.conf`, `legion.conf` | `legion-system.service.d/`, `/etc/modules-load.d/` | Loads the `legion_laptop` module at boot and before legion-system |
+| `legion-session` + `legion-session.service` | `~/.local/bin`, `~/.config/systemd/user` | Per-login: headset switching (Bluetooth, USB dock, HDMI), call mode, speaker wake, weekly update reminder, repairs its own audio configs |
+| `gpu-run`, `game-gpu`, `steam-gpu`, `gpu-app` | `~/.local/bin` | Start an app on the RTX on the charger, Intel on battery (`gpu-run --which` shows which) |
+| `steam-power-watch.service`, `gpu-app-auto.path/.service` | `~/.config/systemd/user` | Re-route Steam and newly installed games when power or the app menu changes |
+| `ntfs-autofix.sh` | `/usr/local/sbin` | Repairs a dirty NTFS data drive at boot so it still mounts (`--install` sets up its boot service) |
+
+Also needed: `legiond` and `legiond-onresume` from LenovoLegionLinux on, `legiond-cpuset.timer` off,
+`nvidia-powerd` not enabled at boot (legion-system starts it on the charger).
+
+Check they're running:
+
+```bash
+systemctl status legion-system              # active (running)
+systemctl --user status legion-session      # active (running)
+journalctl -t legion-system -n 5
+journalctl -t legion-session -n 5
+```
+
 ## Camera
 
 <a id="webcam"></a>

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Modes (~/.config/gpu-mode): auto (default) or nvidia -> RTX on the charger; intel -> always Intel.
+# On battery it is always Intel, whatever the mode.
+# "gpu-run --which" prints the GPU this resolves to right now.
+mode=$(cat "$HOME/.config/gpu-mode" 2>/dev/null || echo auto)
+on_ac=no
+for ps in /sys/class/power_supply/*; do
+  [ "$(cat "$ps/type" 2>/dev/null)" = Mains ] && [ "$(cat "$ps/online" 2>/dev/null)" = 1 ] && on_ac=yes
+done
+if [ "$on_ac" = yes ] && [ "$mode" != intel ]; then gpu=nvidia; else gpu=intel; fi
+if [ "${1:-}" = --which ]; then echo "$gpu"; exit 0; fi
+if [ "$gpu" = intel ]; then exec "$HOME/.local/bin/intel-run" "$@"; fi
+# launched from an Intel-pinned app: drop those settings so this can use the RTX
+unset VK_ICD_FILENAMES VK_DRIVER_FILES DRI_PRIME MESA_VK_DEVICE_SELECT __GLX_VENDOR_LIBRARY_NAME __EGL_VENDOR_LIBRARY_FILENAMES
+exec prime-run "$@"

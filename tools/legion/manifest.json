@@ -1,0 +1,126 @@
+{
+  "_help": "Custom Legion services. 'root' files are installed with sudo. Placeholders: __USER__ = your username, __NTFS_UUID__ = the NTFS data drive's UUID (found on the laptop). Checkup's 'Legion services' check installs missing files and saves laptop edits back here.",
+  "files": [
+    {
+      "src": "legion-system",
+      "dest": "/usr/local/bin/legion-system",
+      "mode": "755",
+      "root": true
+    },
+    {
+      "src": "legion-power",
+      "dest": "/usr/local/bin/legion-power",
+      "mode": "755",
+      "root": true
+    },
+    {
+      "src": "legion-system.service",
+      "dest": "/etc/systemd/system/legion-system.service",
+      "mode": "644",
+      "root": true
+    },
+    {
+      "src": "legion-system-10-modprobe.conf",
+      "dest": "/etc/systemd/system/legion-system.service.d/10-modprobe.conf",
+      "mode": "644",
+      "root": true
+    },
+    {
+      "src": "legion-modules.conf",
+      "dest": "/etc/modules-load.d/legion.conf",
+      "mode": "644",
+      "root": true
+    },
+    {
+      "src": "ntfs-autofix.sh",
+      "dest": "/usr/local/sbin/ntfs-autofix.sh",
+      "mode": "755",
+      "root": true,
+      "after": "sudo /usr/local/sbin/ntfs-autofix.sh --install"
+    },
+    {
+      "src": "legion-session",
+      "dest": "~/.local/bin/legion-session",
+      "mode": "755",
+      "root": false
+    },
+    {
+      "src": "legion-session.service",
+      "dest": "~/.config/systemd/user/legion-session.service",
+      "mode": "644",
+      "root": false
+    },
+    {
+      "src": "gpu-run",
+      "dest": "~/.local/bin/gpu-run",
+      "mode": "755",
+      "root": false
+    },
+    {
+      "src": "game-gpu",
+      "dest": "~/.local/bin/game-gpu",
+      "mode": "755",
+      "root": false
+    },
+    {
+      "src": "gpu-app",
+      "dest": "~/.local/bin/gpu-app",
+      "mode": "755",
+      "root": false
+    },
+    {
+      "src": "steam-gpu",
+      "dest": "~/.local/bin/steam-gpu",
+      "mode": "755",
+      "root": false
+    },
+    {
+      "src": "steam-power-watch",
+      "dest": "~/.local/bin/steam-power-watch",
+      "mode": "755",
+      "root": false
+    },
+    {
+      "src": "gpu-app-auto.path",
+      "dest": "~/.config/systemd/user/gpu-app-auto.path",
+      "mode": "644",
+      "root": false
+    },
+    {
+      "src": "gpu-app-auto.service",
+      "dest": "~/.config/systemd/user/gpu-app-auto.service",
+      "mode": "644",
+      "root": false
+    },
+    {
+      "src": "steam-power-watch.service",
+      "dest": "~/.config/systemd/user/steam-power-watch.service",
+      "mode": "644",
+      "root": false
+    }
+  ],
+  "enable": [
+    "legion-system.service",
+    "legiond.service",
+    "legiond-onresume.service"
+  ],
+  "disable": [
+    "legiond-cpuset.timer",
+    "nvidia-powerd.service"
+  ],
+  "enable_user": [
+    "legion-session.service",
+    "steam-power-watch.service",
+    "gpu-app-auto.path"
+  ],
+  "packages": [
+    "power-profiles-daemon",
+    "libpulse",
+    "libnotify",
+    "jq",
+    "kdialog",
+    "ntfsprogs",
+    "smartmontools",
+    "nvidia-prime"
+  ]
+}

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Keeps Steam on the right GPU: when the charger is plugged in or out, restarts Steam
+# (minimized) once no game is running. A running game is never interrupted.
+cfg="$HOME/.config/gpu-mode-steam"
+warned=""
+while sleep 5; do
+  pgrep -x steam >/dev/null || { warned=""; continue; }
+  want=$("$HOME/.local/bin/gpu-run" --which)
+  have=$(cat "$cfg" 2>/dev/null)
+  [ "$want" = "$have" ] && { warned=""; continue; }
+  if pgrep -f 'SteamLaunch AppId=' >/dev/null; then
+    [ -n "$warned" ] || notify-send -a Steam -i steam "Steam GPU" "A game is running on the $have GPU. Steam switches to $want when you quit it."
+    warned=1; continue
+  fi
+  notify-send -a Steam -i steam "Steam GPU" "Restarting Steam on the $want GPU."
+  /usr/bin/steam -shutdown >/dev/null 2>&1
+  i=0; while pgrep -x steam >/dev/null && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
+  pgrep -x steam >/dev/null && continue
+  systemd-run --user --collect --quiet "$HOME/.local/bin/steam-gpu" -silent
+  warned=""; sleep 15
+done

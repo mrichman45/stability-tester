@@ -1,0 +1,473 @@
+#!/usr/bin/env bash
+# legion-session: one user background service for the Legion Pro 7
+#   1. Headset audio (Bluetooth or USB): switch sound and mic to the headset when it
+#      connects, back to the speakers and built-in mic when it disconnects, and wake
+#      the speaker amps on the way back
+#      A headset in the laptop's own 3.5 mm jack wins over the dock (it has real analog mic boost).
+#      While another mic is in use, the built-in mic is powered off (unless an app records from it).
+#   2. Headset call mode: when a voice app (Discord, Zoom) opens the mic, switch the
+#      Bluetooth headset to call mode and use its mic; back to music mode after the call.
+#   3. weekly update reminder: every 7 days, offer to run paru -Syu
+#   4. self-repair: at start, puts back any missing audio config (noise filter, Dock Mic, USB rule)
+PCI="pci-0000_00_1f.3"
+SPEAKERS="alsa_output.$PCI.analog-stereo"
+CARD="alsa_card.$PCI"
+BUILTIN_MIC="alsa_input.$PCI.analog-stereo"
+DOCK_KEY="usb-Generic_USB_Audio-00"                  # the Belkin Thunderbolt 4 dock's audio
+DOCK_MIC="dock_mic"                                  # its cleaned-up mono mic (98-dock-mic.conf)
+DOCK_GAIN="170%"                                     # the dock has no mic preamp: +14 dB in software ("" = leave it)
+AUTO_CALL=yes                                        # no = never switch the headset to call mode
+HDMI_KEY="pci-0000_01_00.1"                          # the RTX's HDMI audio: the HDMI port is wired to the dGPU
+AUTO_HDMI=yes                                        # no = never follow the TV, leave sound on the speakers
+CALL_APPS='WEBRTC VoiceEngine|[Dd]iscord|[Zz]oom'     # apps that trigger call mode
+CALL_PROFILE="headset-head-unit"                     # LC3-SWB on the Buds3 Pro; falls back to msbc, then cvsd
+MUSIC_PROFILE="a2dp-sink"
+UPDATE_DAYS=7
+HEAL_CONFIGS=yes                                     # no = never write audio configs back
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/legion-session"
+STAMP="$STATE/last-update"
+AUTO_FLAG="$STATE/auto-call"                         # present while call mode was switched on automatically
+MIC_OFF="$STATE/builtin-mic-off"                     # present while the built-in mic is powered off
+
+log()  { logger -t legion-session "$*"; }
+note() { notify-send -a "Buds" -i audio-headset "$1" "$2" 2>/dev/null; }
+mkdir -p "$STATE"
+
+# ---------- headset helpers ----------
+is_ext() { [[ $1 == bluez_output* || $1 == alsa_output.usb-* || $1 == alsa_output.$HDMI_KEY.* ]]; }  # not the speakers
+analog_in() {   # $1 = USB device key -> its first input that isn't the digital IEC958 one
+  pactl list short sources | awk -v p="alsa_input.$1" 'index($2, p) == 1 && $2 !~ /iec958/ {print $2; exit}'
+}
+analog_out() {  # $1 = USB device key -> its first output that isn't the digital IEC958 one
+  pactl list short sinks | awk -v p="alsa_output.$1" 'index($2, p) == 1 && $2 !~ /iec958/ {print $2; exit}'
+}
+fix_usb() {  # $1 = USB device key: make sure it plays and records analog, never digital (IEC958)
+  local prof i
+  [[ -n $(analog_out "$1") && -n $(analog_in "$1") ]] && return 0
+  for prof in output:analog-stereo+input:analog-stereo output:analog-stereo+input:mono-fallback \
+              output:analog-stereo+input:multichannel-input output:analog-stereo; do
+    pactl set-card-profile "alsa_card.$1" "$prof" 2>/dev/null || continue
+    for i in $(seq 1 10); do
+      [[ -n $(analog_out "$1") && ( -n $(analog_in "$1") || $prof == output:analog-stereo ) ]] && break
+      sleep 0.2
+    done
+    [[ -n $(analog_out "$1") ]] && { log "USB device set to $prof"; return 0; }
+  done
+  return 1
+}
+usb_key() { local k=${1#alsa_output.}; echo "${k%.*}"; }   # alsa_output.usb-X-00.analog-stereo -> usb-X-00
+has_source() { pactl list short sources | awk -v n="$1" '$2 == n {f=1} END {exit !f}'; }
+best_in() {  # $1 = USB device key -> the mic to use: the cleaned Dock Mic for the dock, else its analog input
+  if [[ $1 == "$DOCK_KEY" ]] && has_source "$DOCK_MIC"; then echo "$DOCK_MIC"; else analog_in "$1"; fi
+}
+usb_mic() {  # $1 = USB sink name -> that device's mic, if it has one
+  local key; key=$(usb_key "$1")
+  fix_usb "$key"
+  best_in "$key"
+}
+usb_sink() { pactl list short sinks | awk '$2 ~ /^alsa_output\.usb-/ {print $2; exit}'; }   # any USB output
+hdmi_sink() { pactl list short sinks | awk -v p="alsa_output.$HDMI_KEY" 'index($2, p) == 1 {print $2; exit}'; }
+use_hdmi() {  # the TV: sound goes to it, the mic stays wherever it was. Any headset wins over the TV.
+  local s
+  [[ $AUTO_HDMI == yes ]] || return 1
+  jack_headset && return 1                           # headset in the laptop jack wins
+  [[ -n $(bt_card) || -n $(usb_sink) ]] && return 1  # a Bluetooth or USB headset wins
+  s=$(hdmi_sink); [[ -n $s ]] || return 1
+  pactl set-default-sink "$s" 2>/dev/null || return 1
+  move_outs "$s"
+  log "switched to the HDMI display ($s)"
+}
+default_mic() {  # the laptop-jack headset, else the USB headset's mic, else the built-in mic
+  local s m
+  jack_headset && { echo "$BUILTIN_MIC"; return; }
+  s=$(usb_sink)
+  [[ -n $s ]] && m=$(usb_mic "$s")
+  echo "${m:-$BUILTIN_MIC}"
+}
+move_mics() {  # $1 = source; moves apps that follow the default mic, plus voice apps (Discord, Zoom).
+               # An app pointed at a specific input (say OBS on the built-in mic) stays where you put it,
+               # Desktop-sound capture (.monitor sources) and the two noise filters are never touched.
+  local mons
+  mons=$(pactl --format=json list sources | jq -c '[.[] | select(.name | endswith(".monitor")) | .index]')
+  [[ -n $mons ]] || mons='[]'
+  pactl --format=json list source-outputs |
+    jq -r --argjson mons "$mons" --arg re "$CALL_APPS" '
+      .[] | .source as $s | select($mons | any(. == $s) | not)
+          | select((.properties["node.name"] // "") | test("^capture\\.(mic_ns|dock_mic)$") | not)
+          | select(((.properties["target.object"] // .properties["node.target"]) == null)
+                   or ((.properties["application.name"] // "") | test($re)))
+          | .index' |
+    while read -r id; do pactl move-source-output "$id" "$1" 2>/dev/null; done
+}
+move_outs() {  # $1 = sink; moves apps that follow the default output, plus voice apps (Discord, Zoom).
+               # An app pointed at a specific output (say OBS monitoring on the speakers) stays put.
+  pactl --format=json list sink-inputs |
+    jq -r --arg re "$CALL_APPS" '
+      .[] | select(((.properties["target.object"] // .properties["node.target"]) == null)
+                   or ((.properties["application.name"] // "") | test($re)))
+          | .index' |
+    while read -r id; do pactl move-sink-input "$id" "$1" 2>/dev/null; done
+}
+builtin_users() {  # ids of apps you've set to record from the built-in mic (say OBS); apps that
+                   # follow the default and voice apps move to the new mic, and the noise filter doesn't count
+  local idx
+  idx=$(pactl list short sources | awk -v n="$BUILTIN_MIC" '$2 == n {print $1; exit}')
+  [[ -n $idx ]] || return 0
+  pactl --format=json list source-outputs |
+    jq -r --argjson s "$idx" --arg re "$CALL_APPS" '
+      .[] | select(.source == $s)
+          | select((.properties["node.name"] // "") != "capture.mic_ns")
+          | select((.properties["target.object"] // .properties["node.target"]) != null)
+          | select((.properties["application.name"] // "") | test($re) | not)
+          | .index'
+}
+jack_headset() {  # true while a headset with a mic is plugged into the laptop's own 3.5 mm jack
+                  # (the Legion's Realtek switches the built-in mic's port to analog-input-mic)
+  pactl --format=json list sources |
+    jq -e --arg n "$BUILTIN_MIC" '.[] | select(.name == $n) | (.active_port // "") | test("headset|^analog-input-mic$"; "i")' >/dev/null 2>&1
+}
+builtin_off() {  # another mic took over: power the laptop mic down, unless an app (say OBS) records from it
+  jack_headset && return 0                           # the "laptop mic" is the jack headset's mic: keep it
+  [[ -z $(builtin_users) ]] || return 0
+  pactl suspend-source "$BUILTIN_MIC" 1 2>/dev/null && touch "$MIC_OFF" && log "built-in mic powered off"
+}
+builtin_on() {  # back on the laptop mic, or an app wants it
+  [[ -f $MIC_OFF ]] || return 0
+  pactl suspend-source "$BUILTIN_MIC" 0 2>/dev/null
+  rm -f "$MIC_OFF"
+  log "built-in mic powered on"
+}
+use_jack() {  # headset in the laptop's jack: laptop sound card (headphone port) and its headset mic
+  builtin_on
+  pactl set-default-sink "$SPEAKERS" 2>/dev/null
+  move_outs "$SPEAKERS"
+  pactl set-default-source "$BUILTIN_MIC" 2>/dev/null
+  move_mics "$BUILTIN_MIC"
+  log "switched to the headset in the laptop jack"
+}
+use_usb() {  # $1 = USB sink: make its analog output and mic the defaults
+  local key out m
+  if jack_headset; then use_jack; return; fi         # a headset in the laptop jack wins
+  key=$(usb_key "$1")
+  fix_usb "$key"
+  out=$(analog_out "$key"); out=${out:-$1}
+  pactl set-default-sink "$out"
+  move_outs "$out"
+  m=$(best_in "$key")
+  if [[ $key == "$DOCK_KEY" && -n $DOCK_GAIN ]]; then  # dock connected: set its mic gain
+    pactl set-source-volume "$(analog_in "$key")" "$DOCK_GAIN" 2>/dev/null
+  fi
+  if [[ -n $m ]]; then pactl set-default-source "$m"; move_mics "$m"; builtin_off; fi
+  log "switched to $out${m:+ (mic $m)}"
+}
+bt_card()    { pactl list short cards | awk '$2 ~ /^bluez_card/ {print $2; exit}'; }
+bt_profile() { pactl --format=json list cards | jq -r --arg c "$1" '.[] | select(.name == $c) | .active_profile'; }
+wait_for() {  # $1 = sources|sinks, $2 = name prefix; prints the first match, waiting up to 5 s
+  local i n
+  for i in $(seq 1 25); do
+    n=$(pactl list short "$1" | awk -v p="$2" 'index($2, p) == 1 {print $2; exit}')
+    [[ -n $n ]] && { echo "$n"; return 0; }
+    sleep 0.2
+  done
+  return 1
+}
+call_streams() {  # ids of mic streams opened by voice apps
+  pactl --format=json list source-outputs |
+    jq -r --arg re "$CALL_APPS" '.[] | select((.properties["application.name"] // "") | test($re)) | .index'
+}
+headset_sink() { local s; s=$(wait_for sinks bluez_output) && pactl set-default-sink "$s" && move_outs "$s"; }
+
+call_mode() {  # $1 = card
+  local src
+  pactl set-card-profile "$1" "$CALL_PROFILE" 2>/dev/null \
+    || pactl set-card-profile "$1" headset-head-unit-msbc 2>/dev/null \
+    || pactl set-card-profile "$1" headset-head-unit-cvsd 2>/dev/null \
+    || { note "Couldn't switch to call mode" "Check: pactl list cards | grep headset"; return 1; }
+  src=$(wait_for sources bluez_input) || { note "Call mode on, but no headset mic found" "Reconnect the headset."; return 1; }
+  pactl set-default-source "$src"
+  move_mics "$src"
+  builtin_off
+  headset_sink
+  log "headset call mode ($src)"
+}
+
+music_mode() {  # $1 = card
+  local mic; mic=$(default_mic)
+  [[ $mic == "$BUILTIN_MIC" ]] && builtin_on
+  pactl set-card-profile "$1" "$MUSIC_PROFILE" 2>/dev/null
+  pactl set-default-source "$mic" 2>/dev/null
+  move_mics "$mic"
+  headset_sink
+  log "headset music mode"
+}
+
+# ---------- 1. headset audio (Bluetooth + USB) + speaker wake ----------
+declare -A EXT
+last_wake=0
+
+sink_name() { pactl list short sinks | awk -v i="$1" '$1==i {print $2; exit}'; }
+refresh_bt() {
+  EXT=()
+  while read -r idx name _; do
+    is_ext "$name" && EXT[$idx]=1
+  done < <(pactl list short sinks)
+}
+
+wake_speakers() {
+  local now profile
+  now=$(date +%s)
+  (( now - last_wake < 5 )) && return
+  sleep 1
+  [[ -n $(bt_card) ]] && return                       # Bluetooth headset still connected: just a mode switch
+  local u; u=$(usb_sink)
+  if [[ -n $u ]]; then use_usb "$u"; return; fi       # a USB headset is still plugged in: use it
+  use_hdmi && return                                  # no headset, but the TV is connected
+  last_wake=$now
+  profile=$(pactl --format=json list cards | jq -r --arg c "$CARD" '.[] | select(.name==$c) | .active_profile')
+  if [[ -z $profile || $profile == off ]]; then log "speaker card not found"; return; fi
+  pactl set-card-profile "$CARD" off
+  sleep 1
+  pactl set-card-profile "$CARD" "$profile"
+  sleep 1
+  builtin_on
+  pactl set-default-sink "$SPEAKERS" 2>/dev/null
+  pactl set-default-source "$BUILTIN_MIC" 2>/dev/null
+  move_mics "$BUILTIN_MIC"
+  move_outs "$SPEAKERS"
+  rm -f "$AUTO_FLAG"
+  last_wake=$(date +%s)
+  log "speakers re-initialised"
+}
+
+auto_call_start() {  # $1 = new mic stream id
+  local card app
+  [[ $AUTO_CALL == yes ]] || return
+  card=$(bt_card); [[ -n $card ]] || return
+  [[ $(bt_profile "$card") == a2dp* ]] || return
+  app=$(pactl --format=json list source-outputs | jq -r --argjson i "$1" '.[] | select(.index == $i) | .properties["application.name"] // ""')
+  [[ $app =~ $CALL_APPS ]] || return
+  call_mode "$card" && touch "$AUTO_FLAG" && note "Buds: call mode" "In a call: using the Buds mic"
+}
+
+auto_call_end() {  # after a mic stream closes: back to music mode once no voice app uses the mic
+  [[ -f $AUTO_FLAG ]] || return
+  (
+    sleep 8                                           # ride out streams that reopen during the switch
+    [[ -f $AUTO_FLAG && -z $(call_streams) ]] || exit 0
+    card=$(bt_card)
+    [[ -n $card ]] && music_mode "$card" && note "Buds: music mode" "Call ended"
+    rm -f "$AUTO_FLAG"
+  ) &
+}
+
+audio_loop() {
+  local re_new="'new' on sink #([0-9]+)" re_remove="'remove' on sink #([0-9]+)"
+  local re_mic_new="'new' on source-output #([0-9]+)" re_mic_remove="'remove' on source-output #([0-9]+)"
+  local prev cur idx name u jack now_jack
+  refresh_bt
+  u=$(usb_sink); [[ -n $u ]] && use_usb "$u"         # USB headset already plugged in at login
+  jack=0; jack_headset && { jack=1; use_jack; }       # headset already in the laptop jack
+  (( jack )) || [[ -n $u ]] || use_hdmi               # TV already connected at login
+  prev=$(pactl get-default-sink)
+  while read -r line; do
+    if [[ $line =~ $re_new ]]; then
+      idx=${BASH_REMATCH[1]}; name=$(sink_name "$idx")
+      if [[ $name == bluez_output* ]]; then          # Bluetooth headset connected (or changed mode)
+        EXT[$idx]=1; sleep 1; pactl set-default-sink "$name"; move_outs "$name"; log "switched to $name"
+      elif [[ $name == alsa_output.usb-* ]]; then     # USB headset plugged in
+        EXT[$idx]=1; sleep 1; use_usb "$name"
+      elif [[ $name == alsa_output.$HDMI_KEY.* ]]; then  # TV connected (its sink appears with the display)
+        EXT[$idx]=1; sleep 1; use_hdmi
+      fi
+    elif [[ $line =~ $re_remove ]]; then
+      idx=${BASH_REMATCH[1]}
+      if [[ -n ${EXT[$idx]} ]]; then                  # headset disconnected (or changed mode)
+        unset "EXT[$idx]"; wake_speakers
+      fi
+    elif [[ $line =~ $re_mic_new ]]; then
+      if [[ -f $MIC_OFF ]]; then                      # an app (say OBS) wants the laptop mic while it's off
+        ( sleep 0.5; [[ -n $(builtin_users) ]] && builtin_on ) &
+      fi
+      auto_call_start "${BASH_REMATCH[1]}"
+    elif [[ $line =~ $re_mic_remove ]]; then
+      auto_call_end
+    elif [[ $line == *"'change' on source #"* || $line == *"'change' on card #"* ]]; then
+      now_jack=0; jack_headset && now_jack=1          # laptop jack: headset plugged in or pulled out?
+      if (( now_jack != jack )); then
+        jack=$now_jack
+        if (( jack )); then
+          use_jack
+        else
+          u=$(usb_sink); [[ -n $u ]] && use_usb "$u"  # back to the dock if it's connected
+          log "headset removed from the laptop jack"
+        fi
+      fi
+    elif [[ $line == *"'change' on server"* ]]; then
+      cur=$(pactl get-default-sink)
+      if is_ext "$prev" && [[ $cur == alsa_output.$PCI* ]]; then wake_speakers; fi
+      prev=$(pactl get-default-sink)
+    fi
+  done < <(pactl subscribe)
+}
+
+# ---------- 3. weekly update reminder ----------
+update_prompt() {
+  while true; do
+    kdialog --title "Weekly update" --yes-label "Update now" --no-label "Remind me in 1 hour" \
+      --cancel-label "Skip this week" \
+      --yesnocancel "Time for the weekly system update (repo packages + AUR).\n\nClose games and save your work first."
+    case $? in
+      0) break ;;
+      1) sleep 3600 ;;
+      *) date +%s > "$STAMP"; log "update skipped"; return ;;
+    esac
+  done
+  date +%s > "$STAMP"
+  log "update started"
+  konsole -e bash -c 'echo "=== Weekly update: paru -Syu (includes pacman -Syu) ==="; echo
+paru -Syu
+status=$?
+echo
+if [ $status -eq 0 ]; then echo "Update finished."; else echo "Update stopped with an error (code $status). Read the messages above."; fi
+read -rp "Press Enter to close this window."'
+}
+
+update_loop() {
+  [[ -f $STAMP ]] || date +%s > "$STAMP"            # first run: start counting from today
+  sleep 120                                          # let the desktop finish starting
+  while true; do
+    if (( $(date +%s) - $(cat "$STAMP") >= UPDATE_DAYS * 86400 )); then update_prompt; fi
+    sleep 3600
+  done
+}
+
+# ---------- 4. self-repair: put back missing audio configs ----------
+# Only writes a file that's missing (your edits are kept); a file renamed to .off counts as "off on purpose".
+PWC="$HOME/.config/pipewire/pipewire.conf.d"
+WPC="$HOME/.config/wireplumber/wireplumber.conf.d"
+noise_conf() { cat <<'CONF_EOF'
+context.modules = [
+{   name = libpipewire-module-filter-chain
+    args = {
+        node.description = "Mic Noise Suppression"
+        media.name = "Mic Noise Suppression"
+        filter.graph = {
+            nodes = [
+                {
+                    type   = ladspa
+                    name   = rnnoise
+                    plugin = /usr/lib/ladspa/librnnoise_ladspa.so
+                    label  = noise_suppressor_mono
+                    control = {
+                        "VAD Threshold (%)" = 25.0
+                        "VAD Grace Period (ms)" = 400
+                    }
+                }
+            ]
+        }
+        capture.props = {
+            node.name = "capture.mic_ns"
+            node.passive = true
+            audio.rate = 48000
+            audio.channels = 1
+            audio.position = [ MONO ]
+        }
+        playback.props = {
+            node.name = "mic_ns"
+            media.class = Audio/Source
+            audio.rate = 48000
+            audio.channels = 1
+            audio.position = [ MONO ]
+            filter.smart = true
+            filter.smart.name = "mic-noise-suppression"
+            filter.smart.target = { node.name = "alsa_input.pci-0000_00_1f.3.analog-stereo" }
+        }
+    }
+}
+]
+CONF_EOF
+}
+dock_conf() { cat <<'CONF_EOF'
+# Dock Mic: the Belkin Thunderbolt 4 dock's headset mic, cleaned up.
+# The dock's mic is mono and arrives as the same signal on both "Analog Stereo" channels, so this
+# takes one channel and runs it through RNNoise (the same filter as the laptop mic in section 4)
+# to remove keyboard clicks and fan noise. The dock has no mic boost; legion-session sets its
+# gain (DOCK_GAIN, 170% = +14 dB) whenever the dock connects.
+# Needs: sudo pacman -S noise-suppression-for-voice
+context.modules = [
+{   name = libpipewire-module-filter-chain
+    args = {
+        node.description = "Dock Mic"
+        media.name = "Dock Mic"
+        filter.graph = {
+            nodes = [
+                {
+                    type   = ladspa
+                    name   = rnnoise
+                    plugin = /usr/lib/ladspa/librnnoise_ladspa.so
+                    label  = noise_suppressor_mono
+                    control = {
+                        "VAD Threshold (%)" = 50.0
+                        "VAD Grace Period (ms)" = 200
+                    }
+                }
+            ]
+        }
+        capture.props = {
+            node.name = "capture.dock_mic"
+            node.passive = true
+            target.object = "alsa_input.usb-Generic_USB_Audio-00.analog-stereo"
+            node.dont-fallback = true
+            audio.rate = 48000
+            audio.channels = 1
+            audio.position = [ FL ]
+        }
+        playback.props = {
+            node.name = "dock_mic"
+            node.description = "Dock Mic"
+            media.class = Audio/Source
+            audio.rate = 48000
+            audio.channels = 1
+            audio.position = [ MONO ]
+        }
+    }
+}
+]
+CONF_EOF
+}
+usb_rule() { cat <<'CONF_EOF'
+# USB headsets and docks: start with analog output + analog mic, never the digital (IEC958) input.
+# (legion-session also fixes this when a device without that profile is plugged in.)
+monitor.alsa.rules = [
+  {
+    matches = [ { device.name = "~alsa_card.usb-*" } ]
+    actions = { update-props = { device.profile = "output:analog-stereo+input:analog-stereo" } }
+  }
+]
+CONF_EOF
+}
+heal() {  # $1 = file, $2 = function that prints it
+  [[ -e $1 || -e $1.off ]] && return 1
+  "$2" > "$1" && log "restored $1"
+}
+ensure_configs() {
+  local fixed=0
+  [[ $HEAL_CONFIGS == yes ]] || return 0
+  mkdir -p "$PWC" "$WPC"
+  if [[ -f /usr/lib/ladspa/librnnoise_ladspa.so ]]; then    # the filters need noise-suppression-for-voice
+    heal "$PWC/99-noise-cancel.conf" noise_conf && fixed=1
+    heal "$PWC/98-dock-mic.conf" dock_conf && fixed=1
+  fi
+  heal "$WPC/51-usb-headset-analog-mic.conf" usb_rule && fixed=1
+  (( fixed )) || return 0
+  notify-send -a "Legion audio" -i audio-card "Audio settings restored" \
+    "A missing audio config was put back and audio restarted. Quit and reopen Discord." 2>/dev/null
+  systemctl --user restart pipewire.service pipewire-pulse.service wireplumber.service
+  sleep 3
+}
+
+rm -f "$AUTO_FLAG"
+ensure_configs
+[[ -f $MIC_OFF ]] && { pactl suspend-source "$BUILTIN_MIC" 0 2>/dev/null; rm -f "$MIC_OFF"; }   # fresh start: mic on
+update_loop &
+audio_loop          # if PipeWire restarts, this ends and systemd restarts the whole service
