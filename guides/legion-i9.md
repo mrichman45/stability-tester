@@ -157,6 +157,31 @@ If Alacritty ever breaks: **Ctrl+Alt+F3** gives a text login, and `sudo pacman -
 
 ---
 
+## Sound
+
+<a id="speakers"></a>
+### Speakers silent or quiet (TAS2781 amplifier)
+
+The Legion's speaker amplifier (Texas Instruments TAS2781) needs a fix on Linux. This laptop uses
+[tas2781-fix-16IRX8H](https://github.com/DanielWeiner/tas2781-fix-16IRX8H), made for the Legion Pro 7 16IRX8H.
+It applies the fix when the sound system starts and again after waking from sleep.
+
+Install (Checkup's **Speaker fix installed** check does this for you):
+```bash
+sudo pacman -S --needed git jq i2c-tools
+git clone https://github.com/DanielWeiner/tas2781-fix-16IRX8H ~/.local/src/tas2781-fix-16IRX8H
+sudo bash ~/.local/src/tas2781-fix-16IRX8H/tas2781-fix --install    # the script's name in that folder
+systemctl --user enable --now tas2781-fix.service
+```
+Then restart.
+
+- Speakers silent again: `systemctl --user restart tas2781-fix.service`
+- Check it ran: `systemctl status tas2781-fix.service` should say **active (exited)**.
+- Remove: `/usr/local/bin/tas2781-fix --uninstall`
+- A future kernel may fix the amplifier by itself; the fix is harmless either way.
+
+---
+
 ## Camera
 
 <a id="webcam"></a>

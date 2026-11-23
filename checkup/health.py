@@ -148,6 +148,16 @@ def h_webcam_service(ctx):
          "systemctl --user restart webcam-settings.service"]))
 
 
+def h_speakers(ctx):
+    if not Path("/usr/local/bin/tas2781-fix").exists():
+        return None   # falls back to the "Speaker fix installed" check
+    enabled, active = unit_state("tas2781-fix.service")
+    if active == "active":
+        return Result(OK, "The speaker amplifier fix ran (speakers should work).")
+    return Result(FAIL, f"The speaker fix didn't run this session (it's {active}), so the speakers may be silent.",
+                  Fix("Re-ran the speaker fix", ["systemctl --user restart tas2781-fix.service"]))
+
+
 def h_wifi(ctx):
     if not which("nmcli"):
         return None
@@ -164,6 +174,7 @@ def h_wifi(ctx):
 HEALTH = [
     Check("nvidia", "NVIDIA graphics work", "nvidia-mismatch", h_nvidia),
     Check("wifi", "Wi-Fi works", "dns", h_wifi),
+    Check("speakers", "Speakers work (amplifier fix ran)", "speakers", h_speakers),
     Check("docker", "Docker runs containers", "docker", h_docker),
     Check("vlc", "VLC plays h264", "vlc", h_vlc),
     Check("fastfetch", "Terminal greeting works", "fastfetch", h_fastfetch),

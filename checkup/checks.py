@@ -566,6 +566,40 @@ def c_extras(ctx):
                   manual=" ".join(manual))
 
 
+TAS_REPO = "https://github.com/DanielWeiner/tas2781-fix-16IRX8H"
+TAS_DIR = SRC_DIR / "tas2781-fix-16IRX8H"
+
+
+def c_speakers(ctx):
+    """Lenovo Legion speaker amplifier (TI TAS2781) fix, from DanielWeiner/tas2781-fix-16IRX8H."""
+    if not ctx.expects("speakers"):
+        return None
+    script = Path("/usr/local/bin/tas2781-fix")
+    system_unit = Path("/etc/systemd/system/tas2781-fix.service")
+    enabled, _ = unit_state("tas2781-fix.service", user=True)
+    problems = []
+    if not script.exists():
+        problems.append("the speaker fix isn't installed")
+    elif not system_unit.exists():
+        problems.append("the speaker fix's system service is missing")
+    elif enabled != "enabled":
+        problems.append("the speaker fix isn't switched on for your login")
+    missing = [p for p in ("jq", "i2c-tools") if not pkg_version(p)]
+    if missing:
+        problems.append("it needs " + " and ".join(missing))
+    if not problems:
+        return Result(OK, "The speaker amplifier fix is installed and runs at login and after sleep.")
+    d = shell_quote(TAS_DIR)
+    fix = ["sudo pacman -S --needed git jq i2c-tools"]
+    if not script.exists() or not system_unit.exists():
+        fix += [f"mkdir -p {shell_quote(SRC_DIR)} && if [ -d {d}/.git ]; then git -C {d} pull --ff-only; "
+                f"else git clone {TAS_REPO} {d}; fi",
+                f"sudo bash \"$(find {d} -maxdepth 1 -type f -name 'tas2781-fix*' ! -name '*.md' | head -n1)\" --install"]
+    fix += ["systemctl --user daemon-reload", "systemctl --user enable --now tas2781-fix.service"]
+    return Result(FAIL, _cap("; ".join(problems)) + " (without it, the speakers may be silent or quiet).",
+                  Fix("Installed the Legion speaker fix (tas2781-fix)", fix, after="Restart, then test the speakers."))
+
+
 def c_dns(ctx):
     times = []
     for host in ("archlinux.org", "wikipedia.org", "github.com"):
@@ -604,6 +638,7 @@ CHECKS = [
     Check("webcam-service", "Webcam settings restored automatically", "kcm-webcam", c_webcam_service),
     Check("nordvpn", "NordVPN ready", "nordvpn", c_nordvpn),
     Check("er-save-manager", "Elden Ring Save Manager updates itself", "elden-ring", c_er_save_manager),
+    Check("speakers", "Speaker fix installed", "speakers", c_speakers),
     Check("extras", "Apps and settings found on this laptop", "also-set-up-on-this-laptop-found-by-checkup", c_extras),
     Check("dns", "Internet name lookups", "dns", c_dns),
 ]

@@ -30,7 +30,7 @@ KNOWN_PACKAGES = {
 }
 MANAGED = re.compile(r"^(linux|linux-cachyos.*|nvidia.*|lib32-nvidia.*|cachyos-.*|chwd|mkinitcpio.*|"
                      r".*-headers|limine.*|grub|systemd-boot.*|intel-ucode|amd-ucode|.*-firmware.*)$")
-KNOWN_SERVICES = {"docker.service", "nordvpnd.service", "webcam-settings.service"}
+KNOWN_SERVICES = {"docker.service", "nordvpnd.service", "webcam-settings.service", "tas2781-fix.service"}
 DEFAULT_GROUPS = {"wheel", "users", "audio", "video", "storage", "optical", "network", "power", "lp", "sys",
                   "input", "rfkill", "autologin", "docker", "nordvpn"}
 

@@ -44,6 +44,7 @@
       "updates",
       "reboot",
       "kernel",
+      "speakers",
       "nvidia",
       "secure-boot",
       "terminal",
@@ -58,6 +59,7 @@
     ],
     "health": [
       "nvidia",
+      "speakers",
       "wifi",
       "camera",
       "webcam-service"
