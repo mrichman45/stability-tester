@@ -268,7 +268,9 @@ sudo usermod -aG nordvpn <your-username>     # then log out and back in
 nordvpn login
 nordvpn connect
 ```
-"Cannot reach System Daemon" means the service isn't running, or you haven't logged out and back in yet.
+"Cannot reach System Daemon" (or the app saying "We couldn't connect to NordVPN service") means the service isn't
+running, or you aren't in the `nordvpn` group yet: run `sudo groupadd -f nordvpn`, then the `usermod` line above,
+and restart. Checkup doesn't check NordVPN.
 VPNs often don't work on airplane Wi-Fi.
 ---
 

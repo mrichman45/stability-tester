@@ -486,10 +486,11 @@ def c_camera(ctx):
 
 
 def c_nordvpn(ctx):
+    # Only checked on a laptop whose profile lists it (none do by default).
+    if not ctx.expects("nordvpn"):
+        return None
     script, problems, after = [], [], ""
     if not (pkg_version("nordvpn-bin") or pkg_version("nordvpn")):
-        if not ctx.expects("nordvpn"):
-            return None
         problems.append("NordVPN isn't installed")
         script += ["sudo pacman -S --needed git base-devel", "@aur nordvpn-bin"]
     enabled, active = unit_state("nordvpnd.service")
