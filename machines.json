@@ -68,7 +68,82 @@
       "cpu": 100,
       "gpu": 87
     },
-    "kernel": "linux-cachyos-lts"
+    "kernel": "linux-cachyos-lts",
+    "extras": {
+      "aur": [
+        "android-sdk-cmdline-tools-latest",
+        "android-studio",
+        "anydesk-bin",
+        "cemu",
+        "cndrvcups-lb-bin",
+        "er-save-manager",
+        "galaxybudsclient-bin",
+        "lenovo-logo-changer",
+        "logiops",
+        "makemkv-libaacs",
+        "open-wallpaper-engine",
+        "pcsx2",
+        "pear-desktop-bin",
+        "rpcs3-bin",
+        "waywallen"
+      ],
+      "packages": [
+        "chntpw",
+        "dolphin-plugins",
+        "etcher-bin",
+        "fcitx5",
+        "fcitx5-configtool",
+        "fcitx5-gtk",
+        "fcitx5-mozc",
+        "fcitx5-qt",
+        "fuse2",
+        "gamescope-session-cachyos",
+        "github-cli",
+        "gst-plugins-base",
+        "gst-plugins-good",
+        "guvcview",
+        "handbrake",
+        "intel-media-driver",
+        "jdk17-openjdk",
+        "lenovolegionlinux-dkms",
+        "lib32-gamemode",
+        "lib32-vulkan-intel",
+        "libreoffice-fresh-sdk",
+        "libxml2-legacy",
+        "nodejs",
+        "noise-suppression-for-voice",
+        "npm",
+        "nvme-cli",
+        "nvtop",
+        "obs-studio",
+        "papirus-icon-theme",
+        "plasma-disks",
+        "powertop",
+        "print-manager",
+        "qogir-icon-theme",
+        "rustup",
+        "s-tui",
+        "turbostat",
+        "vivaldi",
+        "vlc-gui-qt",
+        "vulkan-intel",
+        "wit"
+      ],
+      "remove": [
+        "alsa-tools",
+        "noisetorch"
+      ],
+      "services": [
+        "legion-system.service",
+        "vantaged.service"
+      ],
+      "user_services": [
+        "tas2781-fix.service"
+      ],
+      "groups": [
+        "nopasswdlogin"
+      ]
+    }
   },
   "msi-gf75": {
     "label": "MSI GF75 Thin",

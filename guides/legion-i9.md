@@ -301,8 +301,96 @@ and restart. Checkup doesn't check NordVPN.
 VPNs often don't work on airplane Wi-Fi.
 ---
 
+<!-- checkup:found:start -->
+## Also set up on this laptop (found by Checkup)
+
+Checkup found these on the laptop and added them to its profile, so **Set up this laptop** redoes them after a reinstall. Remove anything you don't want with **Review** on the My Setup tab.
+
+**Apps**
+```bash
+sudo pacman -S --needed chntpw dolphin-plugins etcher-bin fcitx5 fcitx5-configtool fcitx5-gtk fcitx5-mozc fcitx5-qt fuse2 gamescope-session-cachyos github-cli gst-plugins-base gst-plugins-good guvcview handbrake intel-media-driver jdk17-openjdk lenovolegionlinux-dkms lib32-gamemode lib32-vulkan-intel libreoffice-fresh-sdk libxml2-legacy nodejs noise-suppression-for-voice npm nvme-cli nvtop obs-studio papirus-icon-theme plasma-disks powertop print-manager qogir-icon-theme rustup s-tui turbostat vivaldi vlc-gui-qt vulkan-intel wit
+```
+
+**AUR apps**
+```bash
+paru -S --needed android-sdk-cmdline-tools-latest
+paru -S --needed android-studio
+paru -S --needed anydesk-bin
+paru -S --needed cemu
+paru -S --needed cndrvcups-lb-bin
+paru -S --needed er-save-manager
+paru -S --needed galaxybudsclient-bin
+paru -S --needed lenovo-logo-changer
+paru -S --needed logiops
+paru -S --needed makemkv-libaacs
+paru -S --needed open-wallpaper-engine
+paru -S --needed pcsx2
+paru -S --needed pear-desktop-bin
+paru -S --needed rpcs3-bin
+paru -S --needed waywallen
+```
+
+**Removed after installing**
+```bash
+sudo pacman -Rns alsa-tools noisetorch
+```
+
+**Services**
+```bash
+sudo systemctl enable --now legion-system.service
+sudo systemctl enable --now vantaged.service
+```
+
+**Your services**
+```bash
+systemctl --user enable --now tas2781-fix.service
+```
+
+**Groups** (log out and back in afterwards)
+```bash
+sudo usermod -aG nopasswdlogin <your-username>
+```
+<!-- checkup:found:end -->
+
+---
+
 ## Fix log
 
 Entries below are added automatically by Checkup when a problem it found has been fixed.
 
 <!-- checkup:fix-log -->
+
+### 2026-11-23 · Lenovo Legion i9 · System up to date
+- **Problem:** Couldn't reach the package servers to check for updates.
+- **Fix:** Fixed outside Checkup
+- **More:** [System up to date](#reading-an-update-list)
+
+
+
+### 2026-11-21 · Lenovo Legion i9 · System up to date
+- **Problem:** 4 updates available (including the kernel or NVIDIA driver).
+- **Fix:** Updated the system
+- **More:** [System up to date](#reading-an-update-list)
+
+
+
+### 2026-11-21 · Lenovo Legion i9 · fastfetch greeting in fish
+- **Problem:** Fastfetch isn't set to run when a terminal opens.
+- **Fix:** Repaired the fastfetch greeting in fish
+- **More:** [fastfetch greeting in fish](#fastfetch)
+
+
+
+### 2026-11-21 · Lenovo Legion i9 · Docker running and usable
+- **Problem:** The Docker service is inactive and not enabled at boot.
+- **Fix:** Installed/enabled Docker and joined the docker group
+- **More:** [Docker running and usable](#docker)
+
+
+
+### 2026-11-21 · Lenovo Legion i9 · Secure Boot files signed
+- **Problem:** Not signed (the laptop won't boot them): /boot/EFI/BOOT/BOOTX64.EFI, /boot/EFI/Microsoft/Boot/Resources/bootres.dll, /boot/EFI/Microsoft/Boot/Resources/en-US/bootres.dll.mui, /boot/EFI/Microsoft/Boot/SecureBootRecovery.efi, /boot/EFI/Microsoft/Boot/bg-BG/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/bg-BG/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/bootmgfw.efi, /boot/EFI/Microsoft/Boot/bootmgr.efi, /boot/EFI/Microsoft/Boot/cs-CZ/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/cs-CZ/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/cs-CZ/memtest.efi.mui, /boot/EFI/Microsoft/Boot/da-DK/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/da-DK/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/da-DK/memtest.efi.mui, /boot/EFI/Microsoft/Boot/de-DE/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/de-DE/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/de-DE/memtest.efi.mui, /boot/EFI/Microsoft/Boot/el-GR/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/el-GR/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/el-GR/memtest.efi.mui, /boot/EFI/Microsoft/Boot/en-GB/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/en-GB/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/en-US/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/en-US/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/en-US/memtest.efi.mui, /boot/EFI/Microsoft/Boot/es-ES/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/es-ES/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/es-ES/memtest.efi.mui, /boot/EFI/Microsoft/Boot/es-MX/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/es-MX/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/et-EE/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/et-EE/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/fi-FI/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/fi-FI/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/fi-FI/memtest.efi.mui, /boot/EFI/Microsoft/Boot/fr-CA/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/fr-CA/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/fr-FR/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/fr-FR/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/fr-FR/memtest.efi.mui, /boot/EFI/Microsoft/Boot/hr-HR/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/hr-HR/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/hu-HU/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/hu-HU/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/hu-HU/memtest.efi.mui, /boot/EFI/Microsoft/Boot/it-IT/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/it-IT/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/it-IT/memtest.efi.mui, /boot/EFI/Microsoft/Boot/ja-JP/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/ja-JP/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/ja-JP/memtest.efi.mui, /boot/EFI/Microsoft/Boot/kd_02_10df.dll, /boot/EFI/Microsoft/Boot/kd_02_10ec.dll, /boot/EFI/Microsoft/Boot/kd_02_1137.dll, /boot/EFI/Microsoft/Boot/kd_02_1414.dll, /boot/EFI/Microsoft/Boot/kd_02_14e4.dll, /boot/EFI/Microsoft/Boot/kd_02_15ad.dll, /boot/EFI/Microsoft/Boot/kd_02_15b3.dll, /boot/EFI/Microsoft/Boot/kd_02_1969.dll, /boot/EFI/Microsoft/Boot/kd_02_19a2.dll, /boot/EFI/Microsoft/Boot/kd_02_1af4.dll, /boot/EFI/Microsoft/Boot/kd_02_1d0f.dll, /boot/EFI/Microsoft/Boot/kd_02_8086.dll, /boot/EFI/Microsoft/Boot/kd_07_1415.dll, /boot/EFI/Microsoft/Boot/kd_0C_8086.dll, /boot/EFI/Microsoft/Boot/kdnet_uart16550.dll, /boot/EFI/Microsoft/Boot/kdstub.dll, /boot/EFI/Microsoft/Boot/ko-KR/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/ko-KR/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/ko-KR/memtest.efi.mui, /boot/EFI/Microsoft/Boot/lt-LT/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/lt-LT/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/lv-LV/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/lv-LV/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/memtest.efi, /boot/EFI/Microsoft/Boot/nb-NO/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/nb-NO/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/nb-NO/memtest.efi.mui, /boot/EFI/Microsoft/Boot/nl-NL/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/nl-NL/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/nl-NL/memtest.efi.mui, /boot/EFI/Microsoft/Boot/pl-PL/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/pl-PL/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/pl-PL/memtest.efi.mui, /boot/EFI/Microsoft/Boot/pt-BR/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/pt-BR/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/pt-BR/memtest.efi.mui, /boot/EFI/Microsoft/Boot/pt-PT/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/pt-PT/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/pt-PT/memtest.efi.mui, /boot/EFI/Microsoft/Boot/qps-ploc/memtest.efi.mui, /boot/EFI/Microsoft/Boot/qps-plocm/memtest.efi.mui, /boot/EFI/Microsoft/Boot/ro-RO/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/ro-RO/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/ru-RU/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/ru-RU/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/ru-RU/memtest.efi.mui, /boot/EFI/Microsoft/Boot/sk-SK/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/sk-SK/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/sl-SI/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/sl-SI/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/sr-Latn-RS/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/sr-Latn-RS/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/sv-SE/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/sv-SE/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/sv-SE/memtest.efi.mui, /boot/EFI/Microsoft/Boot/tr-TR/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/tr-TR/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/tr-TR/memtest.efi.mui, /boot/EFI/Microsoft/Boot/uk-UA/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/uk-UA/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/zh-CN/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/zh-CN/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/zh-CN/memtest.efi.mui, /boot/EFI/Microsoft/Boot/zh-TW/bootmgfw.efi.mui, /boot/EFI/Microsoft/Boot/zh-TW/bootmgr.efi.mui, /boot/EFI/Microsoft/Boot/zh-TW/memtest.efi.mui
+- **Fix:** Signed the unsigned boot files with sbctl
+- **More:** [Secure Boot files signed](#secure-boot)
+
+
