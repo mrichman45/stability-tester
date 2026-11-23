@@ -726,6 +726,88 @@ def c_legion_services(ctx):
     return Result(OK, f"All {len(files)} custom Legion files are installed, match the repo, and their services are on.")
 
 
+# ---------------------------------------------------------------- AUR packages you fixed yourself
+
+def patched_aur_packages():
+    """[(name, folder, changed files)] for AUR clones in ~/.local/src with your own edits."""
+    out = []
+    if not SRC_DIR.is_dir():
+        return out
+    for d in sorted(SRC_DIR.iterdir()):
+        if not (d / ".git").is_dir() or not (d / "PKGBUILD").exists():
+            continue
+        rc, url, _ = run(["git", "-C", str(d), "remote", "get-url", "origin"])
+        if rc != 0 or "aur.archlinux.org" not in url:
+            continue
+        rc, names, _ = run(["git", "-C", str(d), "diff", "--name-only"])
+        if rc == 0 and names.strip():
+            out.append((d.name, d, names.split()))
+    return out
+
+
+def _ignored_pkgs():
+    ignored = set()
+    for line in read(Path("/etc/pacman.conf")).splitlines():
+        m = re.match(r"\s*IgnorePkg\s*=\s*(.*)", line)
+        if m:
+            ignored.update(m.group(1).split())
+    return ignored
+
+
+def _aur_patched_cmd():
+    for c in ("/usr/bin/aur-patched", str(repo_dir() / "tools/aur-patched")):
+        if Path(c).exists():
+            return c
+    return "aur-patched"
+
+
+def _update_available(name, d):
+    """Why there's something newer, or "" (checks the AUR and, for -git packages, the code)."""
+    rc, _, _ = run(["timeout", "15", "git", "-C", str(d), "fetch", "-q", "origin"])
+    if rc == 0:
+        rc, n, _ = run(["git", "-C", str(d), "rev-list", "--count", "HEAD..@{u}"])
+        if rc == 0 and n.strip() not in ("", "0"):
+            return "the AUR updated its build script"
+    if name.endswith("-git"):
+        for bare in d.iterdir():
+            if bare.is_dir() and (bare / "HEAD").is_file() and (bare / "objects").is_dir() and bare.name != ".git":
+                rc, url, _ = run(["git", "--git-dir", str(bare), "remote", "get-url", "origin"])
+                rc2, have, _ = run(["git", "--git-dir", str(bare), "rev-parse", "HEAD"])
+                if rc != 0 or rc2 != 0:
+                    continue
+                rc, out, _ = run(["timeout", "15", "git", "ls-remote", url.strip(), "HEAD"])
+                if rc == 0 and out.split() and out.split()[0] != have.strip():
+                    return "its author has newer code"
+    return ""
+
+
+def c_patched_aur(ctx):
+    pkgs = patched_aur_packages()
+    if not pkgs:
+        return None
+    tool = _aur_patched_cmd()
+    ignored = _ignored_pkgs()
+    names = ", ".join(n for n, _, _ in pkgs)
+    not_ignored = [n for n, _, _ in pkgs if n not in ignored]
+    if not_ignored:
+        return Result(FAIL, f"System updates would rebuild {', '.join(not_ignored)} from the AUR's script "
+                            "without your fixes.",
+                      Fix("System updates now skip your fixed AUR packages",
+                          [f"sudo {tool} ignore {n}" for n in not_ignored],
+                          preview="Adds them to IgnorePkg in /etc/pacman.conf; Checkup updates them instead."))
+    newer = [(n, d, why) for n, d, _ in pkgs for why in [_update_available(n, d)] if why]
+    if newer:
+        detail = "; ".join(f"{n}: {why}" for n, _, why in newer)
+        script = []
+        for n, d, _ in newer:
+            script += [f"{tool} refresh {n}", f"@build {d}"]
+        return Result(WARN, f"Update available, with your fixes kept — {detail}.",
+                      Fix("Updated your fixed AUR packages", script,
+                          preview="Your edits are put back on top of the AUR's latest script before building. "
+                                  "If they clash, nothing is built and you're told which lines."))
+    return Result(OK, f"{names}: your fixes are in place, up to date, and skipped by system updates.")
+
+
 def c_dns(ctx):
     times = []
     for host in ("archlinux.org", "wikipedia.org", "github.com"):
@@ -766,6 +848,7 @@ CHECKS = [
     Check("er-save-manager", "Elden Ring Save Manager updates itself", "elden-ring", c_er_save_manager),
     Check("speakers", "Speaker fix installed", "speakers", c_speakers),
     Check("legion-services", "Legion services (power, audio, GPU)", "legion-services", c_legion_services),
+    Check("patched-aur", "AUR packages you fixed yourself", "updates-and-packages", c_patched_aur),
     Check("extras", "Apps and settings found on this laptop", "also-set-up-on-this-laptop-found-by-checkup", c_extras),
     Check("dns", "Internet name lookups", "dns", c_dns),
 ]

@@ -144,6 +144,15 @@ Shelly is CachyOS's default graphical package manager; reinstall it any time wit
 
 ---
 
+### AUR packages you fixed yourself (Kando, whatauri)
+
+Some AUR build scripts need a local fix (Kando: the webpack line; whatauri: Tauri 2.2, npm instead
+of pnpm, any .deb name). Keep each as an AUR clone in `~/.local/src/PKG` (`paru -G PKG`) with the fix
+edited in. `aur-patched ignore PKG` stops `paru -Syu` from rebuilding it without the fix, and
+`aur-patched update PKG` updates it with the fix kept. Checkup's *AUR packages you fixed yourself*
+check does both: it flags any that system updates would rebuild, and offers an update (fixes kept)
+when the AUR or the app's author has something newer.
+
 ## Terminal
 
 <a id="konsole"></a>

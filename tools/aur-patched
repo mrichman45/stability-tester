@@ -3,6 +3,7 @@
 #
 #   aur-patched update PKG     fetch the AUR's latest build script, put your fixes back on top,
 #                              rebuild and install (for -git packages this also gets the newest code)
+#   aur-patched refresh PKG    the same without building (Checkup builds it afterwards)
 #   aur-patched list           packages kept in ~/.local/src with fixes, and whether they're ignored
 #   aur-patched ignore PKG     stop paru -Syu from rebuilding PKG from the unfixed AUR script
 #
@@ -18,6 +19,12 @@ die() { echo "aur-patched: $*" >&2; exit 1; }
 is_clone() { [ -d "$SRC/$1/.git" ] && git -C "$SRC/$1" remote get-url origin 2>/dev/null | grep -q 'aur.archlinux.org'; }
 
 cmd_update() {
+  cmd_refresh "$1"
+  cd "$SRC/$1"
+  makepkg -si
+}
+
+cmd_refresh() {
   local pkg=$1 dir="$SRC/$1"
   is_clone "$pkg" || die "$dir isn't an AUR clone. Make one with: cd $SRC; paru -G $pkg"
   cd "$dir"
@@ -25,14 +32,18 @@ cmd_update() {
   if ! git diff --quiet; then
     git stash push -q -m "aur-patched fixes" && stashed=yes
   fi
+  local before; before=$(git rev-parse HEAD)
   git pull -q --ff-only || { [ $stashed = yes ] && git stash pop -q; die "couldn't update the AUR script (network?). Nothing changed."; }
-  if [ $stashed = yes ] && ! git stash pop -q; then
-    git checkout -q -- . ; git stash list | head -n1
-    die "the AUR's new script changes the same lines as your fixes. Your fixes are saved in 'git stash' in $dir; nothing was built."
+  if [ $stashed = yes ] && ! git stash pop -q 2>/dev/null; then
+    # put everything back as it was: the previous script with your fixes
+    git reset -q --hard "$before"
+    git stash pop -q
+    echo "The AUR's new script changes lines next to your fixes:" >&2
+    git --no-pager diff "$before" '@{u}' -- PKGBUILD >&2 || true
+    die "nothing was changed or built. Send this to Claude, or redo your fix on the new script by hand."
   fi
   echo "Your fixes on top of the AUR's latest script:"
   git --no-pager diff --stat
-  makepkg -si
 }
 
 cmd_list() {
@@ -63,7 +74,8 @@ cmd_ignore() {
 
 case "${1:-}" in
   update) [ -n "${2:-}" ] || die "which package? e.g. aur-patched update whatauri-git"; cmd_update "$2" ;;
+  refresh) [ -n "${2:-}" ] || die "which package?"; cmd_refresh "$2" ;;
   list)   cmd_list ;;
   ignore) [ -n "${2:-}" ] || die "which package?"; cmd_ignore "$2" ;;
-  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
