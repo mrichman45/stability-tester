@@ -1,6 +1,7 @@
 # title: The Convergence: Seamless Co-op or Solo picker
 # section: Step 7: Choose Seamless Co-op or Solo each launch
 # when: [ -d ~/Games/ConvergenceER ]
+# default: off
 # manual: Add ~/bin/convergence.sh to Steam twice (Add a Non-Steam Game): "Convergence (Co-op)" with launch options %command% coop, "Convergence (Solo)" with %command% solo. Set cooppassword in SeamlessCoop/ersc_settings.ini.
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 

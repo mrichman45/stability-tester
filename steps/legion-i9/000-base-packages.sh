@@ -4,7 +4,8 @@
 
 check() {
   need_pkgs base-devel linux-cachyos-lts-headers power-profiles-daemon switcheroo-control snap-pac sof-firmware kdeconnect || return 1
-  need_on power-profiles-daemon switcheroo-control
+  need_on switcheroo-control || return 1
+  systemctl is-enabled -q power-profiles-daemon 2>/dev/null || systemctl is-active -q power-profiles-daemon || { echo "power-profiles-daemon isn't running"; return 1; }
 }
 
 apply() {

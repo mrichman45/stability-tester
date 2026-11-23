@@ -232,7 +232,7 @@ WinBoat, and Bottles (Flatpak only). Checkup still tests the ones it can and say
 | Anki starts (software rendering) and plays card audio | Anki | automatic — only when pacman -Q anki &#124;&#124; pacman -Q anki-bin &#124;&#124; pacman -Q anki-qt5 |
 | Gaming stack: Steam, Heroic, Lutris, MangoHud, proton-cachyos, GE-Proton | 6. Gaming | automatic |
 | Bigger NVIDIA shader cache | 6. Gaming | automatic |
-| The Convergence: Seamless Co-op or Solo picker | Step 7: Choose Seamless Co-op or Solo each launch | automatic — only when [ -d ~/Games/ConvergenceER ] |
+| The Convergence: Seamless Co-op or Solo picker | Step 7: Choose Seamless Co-op or Solo each launch | optional (unticked) — only when [ -d ~/Games/ConvergenceER ] |
 | Docker networks stay off your home network's addresses | 8. Docker, and reaching your home network from containers | automatic — only when pacman -Q docker |
 | WinBoat with working USB passthrough | 9. WinBoat: Windows apps, with your shares | optional (unticked) |
 | legion-integrity (is the system intact?) | Integrity check | automatic |

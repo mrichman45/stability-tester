@@ -1,6 +1,7 @@
 # title: RTX HDMI audio switch (lets the RTX power down)
 # section: HDMI audio switch
 # default: off
+# check-as: root
 # after: Add the button: app launcher, search "RTX HDMI Audio", right-click, Add to Panel.
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 

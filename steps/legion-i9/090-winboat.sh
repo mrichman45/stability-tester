@@ -1,6 +1,7 @@
 # title: WinBoat with working USB passthrough
 # section: 9. WinBoat: Windows apps, with your shares
 # default: off
+# check-as: root
 # after: Quit WinBoat completely and start it again. Windows-side steps (mapping the file share) are in the guide.
 . "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 

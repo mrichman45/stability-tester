@@ -809,9 +809,13 @@ def step_check(step):
             def save():
                 Path(repo_file).write_text(S.scrub(Path(here).read_text(), vals))
                 return f"Saved your {name} into the repo. Press Sync with GitHub to share it."
+            dest = here.replace(str(HOME), "~", 1)
+            use_guide = (f"sudo install -m644 {shell_quote(repo_file)} {shell_quote(here)}" if not here.startswith(str(HOME))
+                         else f"install -m644 {shell_quote(repo_file)} {dest}")
             return Result(WARN, f"Your {name} is different from the guide's; it's left as it is.",
                           Fix(f"Saved this laptop's {name} to the repo", [], python=save,
-                              preview="Your username, drive IDs and network are replaced with placeholders."))
+                              preview="Your username, drive IDs and network are replaced with placeholders."),
+                          manual=f"If the guide's version is the newer one, use it instead: {use_guide}")
         detail = _cap(msg) if msg else "Not done yet."
         if step.default == "manual" or not step.apply:
             return Result(WARN, detail, manual=step.manual or "See this step in the guide.")

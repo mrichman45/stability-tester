@@ -6,4 +6,3 @@ export __GLX_VENDOR_LIBRARY_NAME=mesa
 export DXVK_FILTER_DEVICE_NAME=Intel
 export VKD3D_FILTER_DEVICE_NAME=Intel
 exec "$@"
-edited

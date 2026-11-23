@@ -8,7 +8,7 @@ check() {
   ufw status 2>/dev/null | grep -q 'Status: active' || { echo "the firewall (ufw) is off"; return 1; }
   [ -e /etc/snapper/configs/root ] || { echo "no snapper config for /"; return 1; }
   systemctl is-enabled -q limine-snapper-sync 2>/dev/null || { echo "snapshots aren't added to the boot menu (limine-snapper-sync)"; return 1; }
-  [ "$(getent passwd "$USER" | cut -d: -f7)" = /usr/bin/fish ] || { echo "your shell isn't fish"; return 1; }
+  [ "$(readlink -f "$(getent passwd "$USER" | cut -d: -f7)")" = "$(readlink -f /usr/bin/fish)" ] || { echo "your shell isn't fish"; return 1; }
 }
 
 apply() {
