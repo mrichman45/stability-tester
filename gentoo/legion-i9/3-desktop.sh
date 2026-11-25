@@ -44,6 +44,9 @@ em x11-drivers/nvidia-drivers media-libs/mesa media-libs/libva-intel-media-drive
    media-libs/vulkan-loader dev-util/vulkan-tools sys-apps/switcheroo-control
 systemctl enable switcheroo-control
 systemctl disable nvidia-powerd 2>/dev/null || true   # legion-system starts it on the charger
+for u in nvidia-suspend nvidia-hibernate nvidia-resume; do   # RTX memory survives sleep and hibernation
+  if systemctl list-unit-files "$u.service" --no-legend | grep -q .; then systemctl enable "$u.service"; fi
+done
 
 say "5/9 Sound, Bluetooth, power profiles"
 em media-video/pipewire media-video/wireplumber media-libs/noise-suppression-for-voice \

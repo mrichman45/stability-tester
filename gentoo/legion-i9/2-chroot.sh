@@ -73,12 +73,25 @@ say "9/12 Boot menu (systemd-boot, signed)"
 systemd-machine-id-setup        # kernel-install names the boot entry after it
 emerge --noreplace sys-kernel/installkernel
 bootctl install --esp-path=/efi
-cat > /etc/kernel/cmdline <<EOF
-root=UUID=$ROOT_UUID rootflags=subvol=@gentoo rw quiet
-EOF
+CMDLINE="root=UUID=$ROOT_UUID rootflags=subvol=@gentoo rw quiet"
+# Hibernation: reuse CachyOS's swapfile in the @swap subvolume, and tell the kernel
+# where it starts on the disk.
+mkdir -p /swap
+if ! mountpoint -q /swap; then mount -o subvol=@swap "UUID=$ROOT_UUID" /swap 2>/dev/null || true; fi
+if [ -f /swap/swapfile ]; then
+  OFFSET=$(btrfs inspect-internal map-swapfile -r /swap/swapfile)
+  CMDLINE="$CMDLINE resume=UUID=$ROOT_UUID resume_offset=$OFFSET"
+  mkdir -p /etc/systemd/sleep.conf.d
+  printf '[Sleep]\nHibernateDelaySec=2h\n' > /etc/systemd/sleep.conf.d/hibernate-delay.conf
+  echo "Hibernation: resumes from /swap/swapfile (offset $OFFSET); sleep becomes hibernation after 2 hours."
+else
+  echo "No /swap/swapfile in @swap: hibernation is skipped for now (ask me to set it up)."
+fi
+if mountpoint -q /swap; then umount /swap; fi
+echo "$CMDLINE" > /etc/kernel/cmdline
 echo "Kernel command line: $(cat /etc/kernel/cmdline)"
 
-say "10/12 The kernel (6.18 LTS, built here and signed; takes a while)"
+say "10/12 The kernel (6.18 LTS, built here; dracut signs its image; takes a while)"
 emerge --verbose --noreplace sys-kernel/gentoo-kernel
 ls -l /efi/EFI/Linux/ 2>/dev/null || true
 bootctl list --no-pager || true

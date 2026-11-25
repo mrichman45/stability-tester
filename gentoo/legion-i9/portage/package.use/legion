@@ -2,8 +2,10 @@
 sys-kernel/installkernel dracut systemd systemd-boot uki
 sys-apps/systemd boot secureboot
 
-# The kernel: built here, signed for Secure Boot, modules signed too.
-sys-kernel/gentoo-kernel secureboot modules-sign
+# The kernel: built here, modules signed. No "secureboot" flag: on gentoo-kernel it also
+# turns on lockdown, and lockdown blocks hibernation. The firmware still checks the boot
+# files: dracut signs the whole kernel image (UKI) with your db key (etc/dracut.conf.d).
+sys-kernel/gentoo-kernel modules-sign
 
 # NVIDIA: open kernel modules (RTX 40 series), Dynamic Boost daemon for
 # legion-system, Wayland, signed modules, 32-bit libraries for Steam.
