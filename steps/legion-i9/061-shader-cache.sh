@@ -9,5 +9,5 @@ check() {
 
 apply() {
 mkdir -p ~/.config/environment.d
-echo '__GL_SHADER_DISK_CACHE_SIZE=12000000000' > ~/.config/environment.d/gaming.conf
+grep -qs '^__GL_SHADER_DISK_CACHE_SIZE=' ~/.config/environment.d/gaming.conf || echo '__GL_SHADER_DISK_CACHE_SIZE=12000000000' >> ~/.config/environment.d/gaming.conf
 }

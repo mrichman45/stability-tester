@@ -241,6 +241,7 @@ WinBoat, and Bottles (Flatpak only). Checkup still tests the ones it can and say
 | Anki starts (software rendering) and plays card audio | Anki | automatic — only when pacman -Q anki &#124;&#124; pacman -Q anki-bin &#124;&#124; pacman -Q anki-qt5 |
 | Gaming stack: Steam, Heroic, Lutris, MangoHud, proton-cachyos, GE-Proton | 6. Gaming | automatic |
 | Bigger NVIDIA shader cache | 6. Gaming | automatic |
+| Games capped at 60 FPS (Shift+F1: 144, then no cap) | Frame rate cap | automatic |
 | The Convergence: Seamless Co-op or Solo picker | Step 7: Choose Seamless Co-op or Solo each launch | optional (unticked) — only when [ -d ~/Games/ConvergenceER ] |
 | Docker networks stay off your home network's addresses | 8. Docker, and reaching your home network from containers | automatic — only when pacman -Q docker |
 | WinBoat with working USB passthrough | 9. WinBoat: Windows apps, with your shares | optional (unticked) |
@@ -327,6 +328,22 @@ Before buying, check the game on [ProtonDB](https://www.protondb.com) and the
 
 - **007 First Light:** Steam Deck Verified, no anti-cheat, plays fine on CachyOS. Known quirk: the resolution
   may not be saved between sessions; set it again in the game's settings.
+
+<a id="frame-cap"></a>
+### Frame rate cap: 60, or 144 when you want it
+
+Every game is capped at **60 FPS** by MangoHud, which runs in every game (`MANGOHUD=1` in
+`~/.config/environment.d/gaming.conf`). Uncapped, the RTX runs flat out and heats the CPU too, because they
+share the same heat pipes. A cap keeps the laptop cooler and quieter, and frame times steadier.
+
+- **Shift+F1** in a game switches the cap: 60 → 144 → no cap → 60. Each game starts at 60 again.
+- **Shift+F12** shows or hides the overlay.
+- The cap is the `fps_limit=60,144,0` line in `~/.config/MangoHud/MangoHud.conf`; the first number is the
+  default. Change it there (for example `fps_limit=144,60,0`) and the next game you start uses it.
+- A `~/.config/MangoHud/wine-<game>.conf` file replaces these settings for that one game.
+- MangoHud only joins programs that draw with Vulkan, so browsers and ordinary apps are left alone. If the
+  overlay ever shows up in one, add `blacklist=<program>` to `MangoHud.conf`.
+- Checkup's **Games capped at 60 FPS** step sets this up after a reinstall and keeps any cap you chose yourself.
 
 <a id="elden-ring"></a>
 ### Elden Ring: Save Manager that updates itself
