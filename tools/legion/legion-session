@@ -315,7 +315,7 @@ update_prompt() {
   while true; do
     kdialog --title "Weekly update" --yes-label "Update now" --no-label "Remind me in 1 hour" \
       --cancel-label "Skip this week" \
-      --yesnocancel "Time for the weekly system update (repo packages + AUR).\n\nClose games and save your work first."
+      --yesnocancel "Time for the weekly system update.\n\nClose games and save your work first."
     case $? in
       0) break ;;
       1) sleep 3600 ;;
@@ -324,12 +324,14 @@ update_prompt() {
   done
   date +%s > "$STAMP"
   log "update started"
-  konsole -e bash -c 'echo "=== Weekly update: paru -Syu (includes pacman -Syu) ==="; echo
-paru -Syu
+  local cmd="paru -Syu"                                   # CachyOS: repo packages + AUR
+  command -v emerge >/dev/null && cmd="sudo emerge --ask --verbose --update --deep --newuse @world"   # Gentoo
+  konsole -e bash -c 'echo "=== Weekly update: $1 ==="; echo
+$1
 status=$?
 echo
 if [ $status -eq 0 ]; then echo "Update finished."; else echo "Update stopped with an error (code $status). Read the messages above."; fi
-read -rp "Press Enter to close this window."'
+read -rp "Press Enter to close this window."' legion-update "$cmd"
 }
 
 update_loop() {

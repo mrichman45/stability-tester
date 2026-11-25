@@ -1,0 +1,7 @@
+# One kernel, the 6.18 LTS branch. Gentoo only marks LTS kernels stable, but this
+# also stops an automatic jump to the next LTS. Move it on purpose (see the guide).
+>=sys-kernel/gentoo-kernel-6.19
+sys-kernel/gentoo-kernel-bin
+
+# No Flatpak, ever.
+sys-apps/flatpak
