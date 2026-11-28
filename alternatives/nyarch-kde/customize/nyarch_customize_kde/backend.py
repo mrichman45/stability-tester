@@ -341,25 +341,35 @@ FOLDER = "org.kde.plasma.folder"
 PLAIN = "org.kde.desktop"
 
 
-def _desktop_containments(r: Runner) -> list[str]:
-    """Ids of the desktop (not panel) containments in Plasma's layout file."""
+def _containment_plugins() -> dict[str, str]:
+    """{containment id: plugin} for every top-level containment in Plasma's layout file.
+    Read directly: nested groups like [Containments][1] need two --group options in
+    kreadconfig6, and reading the file avoids getting that wrong."""
     f = config_dir() / APPLETS_RC
     if not f.exists():
-        return []
-    ids = re.findall(r"^\[Containments\]\[(\d+)\]\s*$", f.read_text(), flags=re.M)
-    out = []
-    for cid in ids:
-        plugin = _kread(r, APPLETS_RC, f"Containments][{cid}", "plugin")
-        if plugin in (FOLDER, PLAIN):
-            out.append(cid)
+        return {}
+    out, current = {}, None
+    for line in f.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            m = re.fullmatch(r"\[Containments\]\[(\d+)\]", line)
+            current = m.group(1) if m else None
+        elif current and line.startswith("plugin="):
+            out[current] = line.split("=", 1)[1].strip()
     return out
 
 
+def _desktop_containments(r: Runner) -> list[str]:
+    """Ids of the desktop (not panel) containments."""
+    return [cid for cid, plugin in _containment_plugins().items() if plugin in (FOLDER, PLAIN)]
+
+
 def desktop_icons_on(r: Runner) -> bool | None:
-    ids = _desktop_containments(r)
+    plugins = _containment_plugins()
+    ids = [c for c, p in plugins.items() if p in (FOLDER, PLAIN)]
     if not ids:
         return None
-    return any(_kread(r, APPLETS_RC, f"Containments][{c}", "plugin") == FOLDER for c in ids)
+    return any(plugins[c] == FOLDER for c in ids)
 
 
 def set_desktop_icons(r: Runner, on: bool) -> tuple[bool, str]:

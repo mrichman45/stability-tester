@@ -140,10 +140,14 @@ class Colours(Base):
 
 class DesktopIcons(Base):
     def test_switches_only_desktop_containments(self):
+        # Shaped like a real Plasma 6 file: nested applet groups and General groups also exist.
         (b.config_dir() / b.APPLETS_RC).write_text(
-            "[Containments][1]\nplugin=org.kde.plasma.folder\n\n[Containments][2]\nplugin=org.kde.panel\n")
+            "[ActionPlugins][0]\nRightButton;NoModifier=org.kde.contextmenu\n\n"
+            "[Containments][1]\nactivityId=abc\nformfactor=0\nplugin=org.kde.plasma.folder\n\n"
+            "[Containments][1][General]\npositions=x\n\n"
+            "[Containments][2]\nformfactor=2\nplugin=org.kde.panel\n\n"
+            "[Containments][2][Applets][3]\nplugin=org.kde.plasma.folder\n")
         r = FakeRunner()
-        r.kconf = {("Containments][1", "plugin"): b.FOLDER, ("Containments][2", "plugin"): "org.kde.panel"}
         self.assertTrue(b.desktop_icons_on(r))
         ok, _ = b.set_desktop_icons(r, False)
         self.assertTrue(ok)
