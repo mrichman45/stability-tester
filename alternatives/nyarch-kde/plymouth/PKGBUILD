@@ -1,0 +1,144 @@
+# Nyarch Linux's boot splash (Plymouth), packaged so pacman owns the files.
+# Every file comes from Nyarch's GitHub at one commit and is checked by SHA-256.
+# Build from this folder with: makepkg -si   Then switch to it with ./nyarch-plymouth.sh
+pkgname=plymouth-theme-nyarch-logo
+_commit=5088f5cbd80131176cdb2a669e8cfb7ce580312a
+pkgver=1.0.r5088f5c
+pkgrel=1
+pkgdesc="Nyarch Linux boot splash: face-cycling logo and paw-print password box"
+arch=('any')
+url="https://github.com/NyarchLinux/NyarchLinux"
+license=('GPL-3.0-only')
+depends=('plymouth')
+_raw="https://raw.githubusercontent.com/NyarchLinux/NyarchLinux/$_commit"
+_theme="Gnome/usr/share/plymouth/themes/nyarch-logo"
+_files=(
+  loading-gradient-1080p.png
+  loading-gradient-1440p.png
+  loading-gradient-4k.png
+  loading-gradient-720p.png
+  mask-left-1080p.png
+  mask-left-1440p.png
+  mask-left-4k.png
+  mask-left-720p.png
+  mask-right-1080p.png
+  mask-right-1440p.png
+  mask-right-4k.png
+  mask-right-720p.png
+  no-face-nyarch-logo-1080p.png
+  no-face-nyarch-logo-1440p.png
+  no-face-nyarch-logo-4k.png
+  no-face-nyarch-logo-720p.png
+  nyarch-logo-face-OwO-1080p.png
+  nyarch-logo-face-OwO-1440p.png
+  nyarch-logo-face-OwO-4k.png
+  nyarch-logo-face-OwO-720p.png
+  nyarch-logo-face-UwU-1080p.png
+  nyarch-logo-face-UwU-1440p.png
+  nyarch-logo-face-UwU-4k.png
+  nyarch-logo-face-UwU-720p.png
+  nyarch-logo-face-caret-w-caret-1080p.png
+  nyarch-logo-face-caret-w-caret-1440p.png
+  nyarch-logo-face-caret-w-caret-4k.png
+  nyarch-logo-face-caret-w-caret-720p.png
+  nyarch-logo-face-gt-dash-lt-1080p.png
+  nyarch-logo-face-gt-dash-lt-1440p.png
+  nyarch-logo-face-gt-dash-lt-4k.png
+  nyarch-logo-face-gt-dash-lt-720p.png
+  nyarch-logo-face-gt-w-lt-1080p.png
+  nyarch-logo-face-gt-w-lt-1440p.png
+  nyarch-logo-face-gt-w-lt-4k.png
+  nyarch-logo-face-gt-w-lt-720p.png
+  nyarch-logo.plymouth
+  nyarch-logo.script
+  password-box-1080p.png
+  password-box-1440p.png
+  password-box-4k.png
+  password-box-720p.png
+  paw-darkblue-1080p.png
+  paw-darkblue-1440p.png
+  paw-darkblue-4k.png
+  paw-darkblue-720p.png
+  paw-hotpink-1080p.png
+  paw-hotpink-1440p.png
+  paw-hotpink-4k.png
+  paw-hotpink-720p.png
+  paw-lightblue-1080p.png
+  paw-lightblue-1440p.png
+  paw-lightblue-4k.png
+  paw-lightblue-720p.png
+  paw-pink-1080p.png
+  paw-pink-1440p.png
+  paw-pink-4k.png
+  paw-pink-720p.png
+)
+source=("${_files[@]/#/$_raw/$_theme/}" "LICENSE::$_raw/LICENSE")
+sha256sums=(
+  450546da8a792f06f65fa658b02fe880fe18e6b3285a051506ec3844b1f3134a
+  ec66fcfb5b684b5b3be0ac91a030b2c47bd8c79653c414f3d2ca5bddc6956b7c
+  d01d1d67c7c8f90e7034f80ee33764dd51dbd03e55124b7cf4cb9b4f8636b549
+  0695e37471753c4de9357a66d1b203e2afc3a054a37730016a2aa696b690c76c
+  cf11c08ec9175c23481d3aa30442db3c26bf587de7a23b94a207d97a8672ff1a
+  9aa925a94ed2cd7b9242db32e804956632994db2a9a5608ef4cc6b83d08a769f
+  46d891d760463e3961673e36cce095b656c3b7866b9b1f4e24680434d301f711
+  6f14f387f877e082b39a275a191bb0ee048ebbe55199322c0b79d5818f3d55ae
+  cf11c08ec9175c23481d3aa30442db3c26bf587de7a23b94a207d97a8672ff1a
+  9aa925a94ed2cd7b9242db32e804956632994db2a9a5608ef4cc6b83d08a769f
+  46d891d760463e3961673e36cce095b656c3b7866b9b1f4e24680434d301f711
+  6f14f387f877e082b39a275a191bb0ee048ebbe55199322c0b79d5818f3d55ae
+  fd0e7aa24c2582c818f70d1a2af7edfe84b7281269fac5ab829308ebeae7b2c0
+  3b3c7d1a8d5c7aa0b0eb4c18b4726a9345cc08f1f4a3c71ebe874ef1d7ff6c8d
+  8205bc29a0e23ea49a79918857cf2ea700e43909647cbaaff1a76a85188be742
+  d21b5907234bb99869f7401aaef756cb2dc63de3941ddc99953dbd2df132f454
+  585124049e421494ce10ad6bafeafeb8cc28fbdc0dc95a07766a2d4137667a57
+  a67204f05a6d173dbf549699788cc40f1a99edf08e3cda83812c40f269ce4129
+  b52361901a0315abd9ad6e691ba2066e5853282442ab7a5371090c7622349f06
+  49f1b9ed17a22117e6ed65b185d2e0e2b1eeb1405fbdd2cd0a67cb1fd2fe36cc
+  c728ec0eb0fc6e754d2a10b5781fb263cedcf91a238ed6f163e37de77faf822b
+  311d50091e8f598ae3039219f6931a120d68375ed0dda8b572cdefd64c92b0a5
+  3d7b7d2a0becc239e8a723162564576d456b6da779dbc110bfb0c8a0045dee07
+  899b073a307d1b9510ad75690b4745e68c3d698e8bb1bb2c669356495b609354
+  6e508727ed20c4ca762dfb8d0a0e1cfad48df5a32e331c94d4749aea15a9813b
+  0753d85ce12994ec8919a9c586db50434d68e2d0a6ef5fb3043075ce045af3ae
+  1cc80dbc1023ea0c637d498837dee052360ab3a524d3499d552c2721f24996ad
+  601c955091e6edf82150de29836c4d99daf3463a565fd17d645315761a0d9d09
+  2ead4565e4eae75e6b7da8d378eb26cbcfd735806303e8b49f6d6aa71efe425d
+  fc5eb1c71ff6b35e876d06f0d2f0e9c9476338c5879f6d19f84b5090812c2c96
+  0973b6f73580eb91971d67badfe6bec17648e41e29e7d9aad0a3b15c90e68603
+  4eb84529b1af61e3312fe676c2eb72e6b23ec5b814cb43952da0d0a435f3211a
+  77ee485849b269523322ca134ed71e1e748854e1ec27d4ec2d7aa535f42143cf
+  6d960ef5c4ec7306dd8dbe066a47f0339ce4ff5eff70450a5dfb5d620684669e
+  1679e08d5f0dd46a5cb46529eb07ff764e2f50fdf8c51d5248e2eb271e893114
+  5f134037e6e1916e4b0ebc5d352b478e59e1ddb28ee8c9d71a1fc7d22f8b7b97
+  3db57b96d79dc7f9f0d1b96ee6f571bb107226c69a71856b15c932c48a8d445c
+  c1ef0db43c5f188b35a8e468c552072eabbfa5045f642d4a9a5932efe718cb84
+  e0af9a8df654eccabbed5e4db3d488fa1b76d56aa8fdc3115069dd7e7d7a9057
+  77575112ca1398c28f87b1e6b3c02095a96b634f5079b080ddb010417c7aa7a0
+  082d9841066f7774a657ffcbb4eb491fec51e66e6a9ffcb109c80c5d04e4129b
+  1b700821fa87d8e94b58c4ba45a47a45a939877625403e0ef30a07d64a50af08
+  821d3442e1c1edfac635a96ad58b337b1c19fb83cab4aae7048d9215573d8058
+  469b68b8868aa9e2a8988b1d46dd8c66d7788d5ce52f9c8544974ee12dcc41da
+  28a59eb3696f7aa8a11e7fab15967594bcb8063a6e85c836b21cfc052dbf9570
+  0eac9d51101f0017036dd96a3426f12ea5e2623691cf405b47aaf193620c1f92
+  581cdfc33d2c1bb9e2161cdfef20f73c349067c450e36cd5fad06dde9f300d06
+  cf63fb7d3b8e31bf2a13d31d9c2c33eada716fbf3c1d339442c23f4a53dcb740
+  ec5bf563206a955b95ca594d2d3b80ed8f57fcbddd3a66b721437e7e66e906d0
+  a9888202f232c61fb021f055722400152d5d3b00f436110b42f7b61c821343ec
+  fb5e2c6b4d9e710840f2e732f9445c8cc07aaa5e8f66ebc28e528d0e97601038
+  484632add7f713354f071f3a78ce24203e3a53d6d41b82927b1abee43231e790
+  aeb846efc56161846d60cc5f4ecb90c7217456162daaae11b5954ad9f48f6abe
+  a7d315e084126e26946303b58983701ac0c402e941c0f43b840e32386c765303
+  4506e76766c71d4a9118e5846052e1734038af7da113fc005ab55b976ef5d3c4
+  abb87e469c3c23236cf49a58a879e15fbbe7f0c79e5f51152f8b27b98b3e1042
+  74d7f6eebc4240e72048a05d0d203fe2d2118be8bac203bfcf514eb58e23aca5
+  2f6249190d24b42de0a82dcb528b82086eccc367c3b4a42ff6dfba431ca625ee
+  3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986
+)
+
+package() {
+  local f
+  for f in "${_files[@]}"; do
+    install -Dm644 "$srcdir/$f" "$pkgdir/usr/share/plymouth/themes/nyarch-logo/$f"
+  done
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

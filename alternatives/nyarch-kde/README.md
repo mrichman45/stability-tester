@@ -1,6 +1,6 @@
 # Nyarch's look on KDE Plasma
 
-Two separate pieces; use either or both. Neither is part of Checkup.
+Three separate pieces; use any of them. Neither is part of Checkup.
 
 ## Nyarch Customize for KDE (`customize/`)
 
@@ -61,9 +61,32 @@ logo), boot, run `./nyarch-limine.sh undo`, then turn Secure Boot back on.
 
 Tests: `python3 -m unittest test_limine_theme` (in `limine/`).
 
+## Nyarch boot splash (`plymouth/`)
+
+Nyarch's Plymouth splash (the screen after the boot menu): its logo cycles through faces while
+the laptop starts, with a paw-print password box. It picks pictures to fit your screen. It needs
+the `plymouth` hook in mkinitcpio and `splash` on the kernel line, which CachyOS already has; the
+script checks both and changes neither.
+
+```bash
+cd alternatives/nyarch-kde/plymouth
+makepkg -si                    # installs the theme; files pinned to one Nyarch commit by SHA-256
+./nyarch-plymouth.sh preview   # shows your current splash and what would change; touches nothing
+./nyarch-plymouth.sh apply     # asks first
+./nyarch-plymouth.sh undo      # back to the splash you had
+```
+
+`apply` saves your current splash's name, switches to Nyarch's, runs `limine-update` (new
+initramfs, re-enrolled config, re-signed Limine, as for the boot menu), then checks every rebuilt
+initramfs contains the splash and nothing became unsigned. If not, it switches back by itself.
+
+Same recovery as the boot menu: if it won't boot, Secure Boot off (F2), boot,
+`./nyarch-plymouth.sh undo`, Secure Boot on. To remove the theme package afterwards, undo first,
+then `sudo pacman -R plymouth-theme-nyarch-logo`.
+
 ## Credits
 
 Based on [Nyarch Linux](https://github.com/NyarchLinux/NyarchLinux) and its
 [Customize app](https://github.com/NyarchLinux/NyarchCustomize) (GPL-3.0); the accent colours are
-Nyarch's. The boot art is by RavioliMavioli, as credited by Nyarch Linux. Colours come from
+Nyarch's. The boot art is by RavioliMavioli and the splash adaptation by Cloveian, as credited by Nyarch Linux. Colours come from
 [KDE Material You Colors](https://github.com/luisbocanegra/kde-material-you-colors).
