@@ -50,6 +50,15 @@ class Theme(unittest.TestCase):
         self.assertFalse(t.check(out, "nyarch-acchan.png", "d" * 128))
         self.assertFalse(t.check(out.replace("term_palette: ", "term_palette: 000000;"), "nyarch-acchan.png", H))
 
+    def test_machine_id_comment_stays_next_to_the_entries(self):
+        conf = ("timeout: 5\nwallpaper: boot():/limine-splash.png#" + "b" * 128 +
+                "\n\ncomment: machine-id=0123456789abcdef0123456789abcdef\n\n/+CachyOS\n    //linux\n")
+        out = t.apply(conf, "nyarch-acchan.png", H, "stretched")
+        lines = out.splitlines()
+        self.assertLess(lines.index(t.END), lines.index("comment: machine-id=0123456789abcdef0123456789abcdef"))
+        self.assertTrue(t.check(out, "nyarch-acchan.png", H))
+        self.assertEqual(t.strip(out), conf)
+
     def test_unfinished_block_is_refused(self):
         with self.assertRaises(SystemExit):
             t.strip(CONF + t.BEGIN + "\n")

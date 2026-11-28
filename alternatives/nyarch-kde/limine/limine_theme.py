@@ -84,7 +84,15 @@ def strip(text: str) -> str:
 def apply(text: str, name: str, digest: str, style: str) -> str:
     lines = strip(text).splitlines()
     first_entry = next((i for i, l in enumerate(lines) if _ENTRY.match(l)), len(lines))
-    head, tail = lines[:first_entry], lines[first_entry:]
+    # Keep any "comment:" lines (e.g. CachyOS's "comment: machine-id=...", which its Limine
+    # tools use to find the OS entry) right above the entries: insert our block before them.
+    cut = first_entry
+    i = first_entry - 1
+    while i >= 0 and (lines[i].strip() == "" or re.match(r"^\s*comment\s*:", lines[i])):
+        if lines[i].strip():
+            cut = i
+        i -= 1
+    head, tail = lines[:cut], lines[cut:]
     head = [SAVED + l if (m := _KEY.match(l)) and m.group(1).lower() in KEYS else l for l in head]
     while head and head[-1].strip() == "":
         head.pop()
