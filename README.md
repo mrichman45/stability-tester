@@ -30,6 +30,12 @@ and app data in `~/.local/share/` (for example `er-save-manager`), so the home f
 |---|---|
 | [`tools/er-save-manager-update`](tools/er-save-manager-update) | Installs the Elden Ring Save Manager (Linux) and keeps it up to date; its app icon checks for updates on launch. See the Legion guide's Gaming section. |
 
+## Alternatives (optional)
+
+[`alternatives/`](alternatives/) holds other operating systems for these laptops, in case you ever switch:
+for now, [Gentoo on the Legion i9](alternatives/gentoo-legion-i9/). Checkup doesn't use that folder and
+the package doesn't install it.
+
 ## Install
 
 ```bash

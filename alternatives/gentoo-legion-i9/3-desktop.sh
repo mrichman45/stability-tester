@@ -1,6 +1,6 @@
 #!/bin/bash
 # 3-desktop.sh — phase 3 of the Gentoo guide. Run as root on the new Gentoo, after the
-# first boot (text login): sudo bash ~/.local/src/stability-tester/gentoo/legion-i9/3-desktop.sh
+# first boot (text login): sudo bash ~/.local/src/stability-tester/alternatives/gentoo-legion-i9/3-desktop.sh
 #
 # Installs KDE Plasma, the NVIDIA driver, sound and Bluetooth, Japanese typing, fonts,
 # the Legion module, Steam and MangoHud, snapshots; turns on the login screen last.
@@ -85,5 +85,5 @@ cat <<'EOF'
 Reboot. You'll get the graphical login screen. Log in, open a terminal, then run phase 4
 as yourself (not with sudo):
 
-  bash ~/.local/src/stability-tester/gentoo/legion-i9/4-legion.sh
+  bash ~/.local/src/stability-tester/alternatives/gentoo-legion-i9/4-legion.sh
 EOF
