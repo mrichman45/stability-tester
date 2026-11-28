@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nyarch-customize-kde"
+version = "0.1.0"
+description = "Nyarch-style panel layouts, effects, accent colours and desktop icons for KDE Plasma"
+requires-python = ">=3.10"
+
+[project.scripts]
+nyarch-customize-kde = "nyarch_customize_kde.app:main"
+
+[tool.setuptools]
+packages = ["nyarch_customize_kde"]

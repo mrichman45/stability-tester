@@ -32,9 +32,9 @@ and app data in `~/.local/share/` (for example `er-save-manager`), so the home f
 
 ## Alternatives (optional)
 
-[`alternatives/`](alternatives/) holds other operating systems for these laptops, in case you ever switch:
-for now, [Gentoo on the Legion i9](alternatives/gentoo-legion-i9/). Checkup doesn't use that folder and
-the package doesn't install it.
+[`alternatives/`](alternatives/) holds extras kept apart from Checkup: for now,
+[Nyarch's look on KDE](alternatives/nyarch-kde/) (Nyarch Customize for KDE and a Nyarch boot menu for
+Limine). Checkup doesn't use that folder and the package doesn't install it.
 
 ## Install
 

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Nyarch Customize
+Comment=Panel layouts, window effects, accent colours and desktop icons
+Exec=nyarch-customize-kde
+Icon=preferences-desktop-theme
+Categories=Settings;DesktopSettings;Qt;KDE;
+OnlyShowIn=KDE;

@@ -1,0 +1,23 @@
+# Local package: build from this folder with  makepkg -si
+pkgname=nyarch-customize-kde
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Nyarch-style panel layouts, effects, accent colours and desktop icons for KDE Plasma"
+arch=('any')
+license=('GPL-3.0-or-later')
+depends=('python' 'pyside6' 'plasma-workspace' 'kwin' 'kconfig' 'qt6-tools')
+optdepends=('kde-material-you-colors: accent colours and wallpaper-based colours'
+            'kdeplasma-addons: desktop cube effect')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+source=()
+
+build() {
+  cd "$startdir"
+  rm -rf build dist
+  python -m build --wheel --no-isolation --outdir "$srcdir/dist"
+}
+
+package() {
+  python -m installer --destdir="$pkgdir" "$srcdir"/dist/*.whl
+  install -Dm644 "$startdir/nyarch-customize-kde.desktop" "$pkgdir/usr/share/applications/nyarch-customize-kde.desktop"
+}

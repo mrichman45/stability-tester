@@ -1,6 +1,0 @@
-# The Legion module only exists as a live (git) ebuild in GURU.
-sys-firmware/lenovolegionlinux **
-
-# Steam's overlay and GURU (MangoHud) only mark packages as testing.
-*/*::steam-overlay ~amd64
-*/*::guru ~amd64

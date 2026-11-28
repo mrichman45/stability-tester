@@ -1,11 +1,10 @@
 # Alternatives (optional)
 
-Other operating systems for these laptops, kept here in case you decide to switch. Nothing in this
-folder runs on its own: Checkup doesn't use it, the Checkup package doesn't install it, and your
-CachyOS setup doesn't depend on it.
+Extras kept apart from Checkup. Nothing in this folder runs on its own: Checkup doesn't use it, the
+Checkup package doesn't install it, and your CachyOS setup doesn't depend on it.
 
-| Folder | What it is | Guide |
-|---|---|---|
-| [`gentoo-legion-i9/`](gentoo-legion-i9/) | Replace CachyOS with Gentoo on the Legion i9 (systemd, KDE Plasma, Secure Boot, hibernation), keeping Windows, the NTFS drive and your home folder | The "Legion i9: Gentoo install guide" doc; this folder's README lists the scripts |
+| Folder | What it is |
+|---|---|
+| [`nyarch-kde/`](nyarch-kde/) | Nyarch Linux's look on KDE Plasma: a KDE version of Nyarch Customize (panel layouts, window effects, accent colours, desktop icons) and Nyarch's boot menu art for Limine |
 
-To use one, update the repo first (`git pull`) and follow its guide from the beginning.
+Update the repo first (`git pull`), then follow the folder's README.
