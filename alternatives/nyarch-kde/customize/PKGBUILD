@@ -1,7 +1,7 @@
 # Local package: build from this folder with  makepkg -si
 pkgname=nyarch-customize-kde
 pkgver=0.1.0
-pkgrel=2
+pkgrel=3
 pkgdesc="Nyarch-style panel layouts, effects, accent colours and desktop icons for KDE Plasma"
 arch=('any')
 license=('GPL-3.0-or-later')

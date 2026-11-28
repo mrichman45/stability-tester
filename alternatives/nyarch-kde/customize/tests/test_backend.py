@@ -157,6 +157,14 @@ class DesktopIcons(Base):
         self.assertEqual(writes[0][-1], b.PLAIN)
         self.assertEqual(len(b.list_backups()), 1)
 
+    def test_repairs_the_wrong_id_an_earlier_version_wrote(self):
+        (b.config_dir() / b.APPLETS_RC).write_text("[Containments][7]\nplugin=org.kde.desktop\n")
+        r = FakeRunner()
+        self.assertFalse(b.desktop_icons_on(r))
+        b.set_desktop_icons(r, False)
+        [w] = [c for c in r.calls if c[0] == "kwriteconfig6"]
+        self.assertEqual(w[-1], "org.kde.desktopcontainment")
+
 
 if __name__ == "__main__":
     unittest.main()

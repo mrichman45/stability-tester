@@ -338,7 +338,8 @@ def set_material_you(r: Runner, on: bool) -> tuple[bool, str]:
 # --------------------------------------------------------------------------- desktop icons
 
 FOLDER = "org.kde.plasma.folder"
-PLAIN = "org.kde.desktop"
+PLAIN = "org.kde.desktopcontainment"   # Plasma's plain desktop, no icons
+BROKEN = "org.kde.desktop"           # a wrong id 0.1.0-2 wrote; treated as "off" so the app can repair it
 
 
 def _containment_plugins() -> dict[str, str]:
@@ -361,12 +362,12 @@ def _containment_plugins() -> dict[str, str]:
 
 def _desktop_containments(r: Runner) -> list[str]:
     """Ids of the desktop (not panel) containments."""
-    return [cid for cid, plugin in _containment_plugins().items() if plugin in (FOLDER, PLAIN)]
+    return [cid for cid, plugin in _containment_plugins().items() if plugin in (FOLDER, PLAIN, BROKEN)]
 
 
 def desktop_icons_on(r: Runner) -> bool | None:
     plugins = _containment_plugins()
-    ids = [c for c, p in plugins.items() if p in (FOLDER, PLAIN)]
+    ids = [c for c, p in plugins.items() if p in (FOLDER, PLAIN, BROKEN)]
     if not ids:
         return None
     return any(plugins[c] == FOLDER for c in ids)
